@@ -1,8 +1,7 @@
-module github.com/willgorman/cgo-libicsi
+module github.com/willgorman/libiscsi-go
 
-go 1.20
+go 1.21
 
-require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/sanity-io/litter v1.5.5 // indirect
-)
+require github.com/sanity-io/litter v1.5.5
+
+require github.com/davecgh/go-spew v1.1.1 // indirect

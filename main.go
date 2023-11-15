@@ -67,24 +67,12 @@ func playground() int {
 	// iscsi_write16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
 	// 	unsigned char *data, uint32_t datalen, int blocksize,
 	// 	int wrprotect, int dpo, int fua, int fua_nv, int group_number);
-	// data := make([]uint8, 512)
 
 	// TODO: (willgorman) can we get the blocksize and lba count from the device?
-	// data := bytes.Repeat([]byte{0xd}, 512)
-	// var pp byte
-	// pp = byte(C.uchar('1'))
-	// _, _ = rand.Read(data)
-	// foo := make([]C.uchar, 512)
-	// for i := 0; i < 512; i++ {
-	// 	foo[i] = C.uchar(0xe)
-	// }
-	// wtf := C.uchar(data[0])
-	// litter.Dump(data)
-	// litter.Dump(string(foo))
-	data := toCArray([]byte("hello iscsi"))
+	data := toCArray([]byte("goodbye iscsi"))
 	litter.Dump(string(data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
-	if task := C.iscsi_write16_sync(ctx, 0, 0, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
+	if task := C.iscsi_write16_sync(ctx, 0, 1, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
 		// from libiscsi
 		// ok = task->status == SCSI_STATUS_GOOD ||
 		// (task->status == SCSI_STATUS_CHECK_CONDITION &&
@@ -104,7 +92,7 @@ func playground() int {
 	// iscsi_read16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
 	// 	uint32_t datalen, int blocksize,
 	// 	int rdprotect, int dpo, int fua, int fua_nv, int group_number)
-	if task := C.iscsi_read16_sync(ctx, 0, 0, 512, 512, 0, 0, 0, 0, 0); task != nil {
+	if task := C.iscsi_read16_sync(ctx, 0, 1, 512, 512, 0, 0, 0, 0, 0); task != nil {
 		size := task.datain.size
 		dataread := unsafe.Slice(task.datain.data, size)
 		litter.Dump(string(dataread))
