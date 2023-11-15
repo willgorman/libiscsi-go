@@ -9,10 +9,10 @@ package main
 import "C"
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"os"
+	"unsafe"
 
 	"github.com/sanity-io/litter"
 )
@@ -57,16 +57,34 @@ func playground() int {
 		return int(retval)
 	}
 
+	defer func() {
+		retval := C.iscsi_logout_sync(ctx)
+		if retval != 0 {
+			log.Printf("failed to logout: %d", retval)
+		}
+	}()
+
 	// iscsi_write16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
 	// 	unsigned char *data, uint32_t datalen, int blocksize,
 	// 	int wrprotect, int dpo, int fua, int fua_nv, int group_number);
 	// data := make([]uint8, 512)
 
 	// TODO: (willgorman) can we get the blocksize and lba count from the device?
-	data := bytes.Repeat([]byte{0xb}, 512)
+	// data := bytes.Repeat([]byte{0xd}, 512)
+	// var pp byte
+	// pp = byte(C.uchar('1'))
 	// _, _ = rand.Read(data)
-	wtf := C.uchar(data[0])
-	if task := C.iscsi_write16_sync(ctx, 0, 0, &wtf, 512, 512, 0, 0, 0, 0, 0); task != nil {
+	// foo := make([]C.uchar, 512)
+	// for i := 0; i < 512; i++ {
+	// 	foo[i] = C.uchar(0xe)
+	// }
+	// wtf := C.uchar(data[0])
+	// litter.Dump(data)
+	// litter.Dump(string(foo))
+	data := toCArray([]byte("hello iscsi"))
+	litter.Dump(string(data))
+	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
+	if task := C.iscsi_write16_sync(ctx, 0, 0, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
 		// from libiscsi
 		// ok = task->status == SCSI_STATUS_GOOD ||
 		// (task->status == SCSI_STATUS_CHECK_CONDITION &&
@@ -75,6 +93,7 @@ func playground() int {
 		litter.Dump(task.status)
 		litter.Dump(task.sense.ascq)
 		litter.Dump(task.sense.key)
+		// TODO: (willgorman) better error handling/reporting
 	} else {
 		errstr := C.iscsi_get_error(ctx)
 		log.Printf("iscsi_write16_sync: %s", C.GoString(errstr))
@@ -82,6 +101,28 @@ func playground() int {
 	}
 
 	// TODO: (willgorman) read the data back
+	// iscsi_read16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
+	// 	uint32_t datalen, int blocksize,
+	// 	int rdprotect, int dpo, int fua, int fua_nv, int group_number)
+	if task := C.iscsi_read16_sync(ctx, 0, 0, 512, 512, 0, 0, 0, 0, 0); task != nil {
+		size := task.datain.size
+		dataread := unsafe.Slice(task.datain.data, size)
+		litter.Dump(string(dataread))
 
+	} else {
+		errstr := C.iscsi_get_error(ctx)
+		log.Printf("iscsi_read16_sync: %s", C.GoString(errstr))
+		return -1
+	}
 	return 0
+}
+
+// FIXME: (willgorman) this can't possibly be the best way
+func toCArray(bs []byte) []C.uchar {
+	// TODO: (willgorman) validate len(bs) <= 512
+	ret := make([]C.uchar, 512)
+	for i, b := range bs {
+		ret[i] = C.uchar(b)
+	}
+	return ret
 }
