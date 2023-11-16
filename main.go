@@ -69,8 +69,10 @@ func playground() int {
 	// EXTERN struct scsi_task *
 	// iscsi_readcapacity10_sync(struct iscsi_context *iscsi, int lun, int lba,
 	// 				int pmi);
+	var cap C.struct_scsi_readcapacity10
+	var err error
 	if capacity := C.iscsi_readcapacity10_sync(ctx, 0, 0, 0); capacity != nil {
-		cap, err := getReadCapacity(*capacity)
+		cap, err = getReadCapacity(*capacity)
 		if err != nil {
 			log.Println(err)
 			return -1
@@ -86,11 +88,17 @@ func playground() int {
 	// 	unsigned char *data, uint32_t datalen, int blocksize,
 	// 	int wrprotect, int dpo, int fua, int fua_nv, int group_number);
 
-	// TODO: (willgorman) can we get the blocksize and lba count from the device?
-	data := toCArray([]byte("goodbye iscsi"))
+	data := []C.uchar("here's some data")
+	// TODO: (willgorman) handle data > block size or just let it truncate?
+	if len(data) < int(cap.block_size) {
+		dataCopy := make([]C.uchar, cap.block_size)
+		copy(dataCopy, data)
+		data = dataCopy
+	}
+
 	litter.Dump(string(data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
-	if task := C.iscsi_write16_sync(ctx, 0, 1, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
+	if task := C.iscsi_write16_sync(ctx, 0, 2, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
 		// from libiscsi
 		// ok = task->status == SCSI_STATUS_GOOD ||
 		// (task->status == SCSI_STATUS_CHECK_CONDITION &&
@@ -110,7 +118,7 @@ func playground() int {
 	// iscsi_read16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
 	// 	uint32_t datalen, int blocksize,
 	// 	int rdprotect, int dpo, int fua, int fua_nv, int group_number)
-	if task := C.iscsi_read16_sync(ctx, 0, 1, 512, 512, 0, 0, 0, 0, 0); task != nil {
+	if task := C.iscsi_read16_sync(ctx, 0, 2, 512, 512, 0, 0, 0, 0, 0); task != nil {
 		size := task.datain.size
 		dataread := unsafe.Slice(task.datain.data, size)
 		litter.Dump(string(dataread))
@@ -121,16 +129,6 @@ func playground() int {
 		return -1
 	}
 	return 0
-}
-
-// FIXME: (willgorman) this can't possibly be the best way
-func toCArray(bs []byte) []C.uchar {
-	// TODO: (willgorman) validate len(bs) <= 512
-	ret := make([]C.uchar, 512)
-	for i, b := range bs {
-		ret[i] = C.uchar(b)
-	}
-	return ret
 }
 
 func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
