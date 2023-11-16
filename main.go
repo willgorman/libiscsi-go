@@ -9,6 +9,8 @@ package main
 import "C"
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -64,6 +66,22 @@ func playground() int {
 		}
 	}()
 
+	// EXTERN struct scsi_task *
+	// iscsi_readcapacity10_sync(struct iscsi_context *iscsi, int lun, int lba,
+	// 				int pmi);
+	if capacity := C.iscsi_readcapacity10_sync(ctx, 0, 0, 0); capacity != nil {
+		cap, err := getReadCapacity(*capacity)
+		if err != nil {
+			log.Println(err)
+			return -1
+		}
+		litter.Dump("lba", cap.lba, "blocksize", cap.block_size)
+	} else {
+		errstr := C.iscsi_get_error(ctx)
+		log.Printf("iscsi_readcapacity16_sync: %s", C.GoString(errstr))
+		return -1
+	}
+
 	// iscsi_write16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
 	// 	unsigned char *data, uint32_t datalen, int blocksize,
 	// 	int wrprotect, int dpo, int fua, int fua_nv, int group_number);
@@ -113,4 +131,21 @@ func toCArray(bs []byte) []C.uchar {
 		ret[i] = C.uchar(b)
 	}
 	return ret
+}
+
+func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
+	cap := C.struct_scsi_readcapacity10{}
+
+	if task.cdb[0] != C.SCSI_OPCODE_READCAPACITY10 {
+		return cap, errors.New("unexpected opcode")
+	}
+	if task.datain.size != 8 {
+		return cap, errors.New("unexpected size")
+	}
+
+	dataread := unsafe.Slice(task.datain.data, task.datain.size)
+	databytes := []byte(string(dataread))
+	cap.lba = C.uint(binary.BigEndian.Uint32(databytes[:4]))
+	cap.block_size = C.uint(binary.BigEndian.Uint32(databytes[4:]))
+	return cap, nil
 }
