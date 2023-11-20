@@ -1,149 +1,61 @@
 package main
 
-/*
-#cgo CFLAGS: -g -Wall
-#cgo LDFLAGS: -L/opt/homebrew/lib -liscsi
-#include "/opt/homebrew/Cellar/libiscsi/1.19.0/include/iscsi/iscsi.h"
-#include "/opt/homebrew/Cellar/libiscsi/1.19.0/include/iscsi/scsi-lowlevel.h"
-*/
-import "C"
-
 import (
-	"encoding/binary"
-	"errors"
-	"fmt"
 	"log"
 	"os"
-	"unsafe"
 
 	"github.com/sanity-io/litter"
-)
-
-type (
-	ISCSIStruct C.struct_iscsi_context
-	ISCSIUrl    C.struct_iscsi_url
 )
 
 func main() {
 	if len(os.Args) != 3 {
 		panic("missing required args")
 	}
-	os.Exit(playground())
-}
+	device := New(ConnectionDetails{
+		InitiatorIQN: os.Args[1],
+		TargetURL:    os.Args[2],
+	})
 
-func playground() int {
-	initiator := os.Args[1]
-	target := os.Args[2]
-	ctx := C.iscsi_create_context(C.CString(initiator))
-	defer C.iscsi_destroy_context(ctx)
-	fmt.Println(C.iscsi_set_timeout(ctx, 30))
-
-	url := C.iscsi_parse_full_url(ctx, C.CString(target))
-	defer C.iscsi_destroy_url(url)
-
-	// https://groups.google.com/g/golang-nuts/c/5IBOJnqi0Lg?pli=1
-	// need to pass a pointer to the first element of the array
-	fmt.Println(C.GoString(&url.target[0]))
-	fmt.Println(C.GoString(&url.portal[0]))
-
-	_ = C.iscsi_set_targetname(ctx, &url.target[0])
-
-	// TODO: (willgorman) how to use enums from the header?
-	_ = C.iscsi_set_session_type(ctx, 2)
-
-	_ = C.iscsi_set_header_digest(ctx, 1)
-
-	if retval := C.iscsi_full_connect_sync(ctx, &url.portal[0], url.lun); retval != 0 {
-		errstr := C.iscsi_get_error(ctx)
-		log.Printf("iscsi_full_connect_sync: (%d) %s", retval, C.GoString(errstr))
-		return int(retval)
+	err := device.Connect()
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	defer func() {
-		retval := C.iscsi_logout_sync(ctx)
-		if retval != 0 {
-			log.Printf("failed to logout: %d", retval)
-		}
+		_ = device.Disconnect()
 	}()
 
-	// EXTERN struct scsi_task *
-	// iscsi_readcapacity10_sync(struct iscsi_context *iscsi, int lun, int lba,
-	// 				int pmi);
-	var cap C.struct_scsi_readcapacity10
-	var err error
-	if capacity := C.iscsi_readcapacity10_sync(ctx, 0, 0, 0); capacity != nil {
-		cap, err = getReadCapacity(*capacity)
-		if err != nil {
-			log.Println(err)
-			return -1
-		}
-		litter.Dump("lba", cap.lba, "blocksize", cap.block_size)
-	} else {
-		errstr := C.iscsi_get_error(ctx)
-		log.Printf("iscsi_readcapacity16_sync: %s", C.GoString(errstr))
-		return -1
+	capacity, err := device.ReadCapacity10()
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	// iscsi_write16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
-	// 	unsigned char *data, uint32_t datalen, int blocksize,
-	// 	int wrprotect, int dpo, int fua, int fua_nv, int group_number);
-
-	data := []C.uchar("here's some data")
+	data := []byte("AAAABBBBCCCCAAAABBBBCCCCDDDD")
 	// TODO: (willgorman) handle data > block size or just let it truncate?
-	if len(data) < int(cap.block_size) {
-		dataCopy := make([]C.uchar, cap.block_size)
+	if len(data) < capacity.BlockSize {
+		dataCopy := make([]byte, capacity.BlockSize)
 		copy(dataCopy, data)
 		data = dataCopy
 	}
 
 	litter.Dump(string(data))
-	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
-	if task := C.iscsi_write16_sync(ctx, 0, 2, &data[0], 512, 512, 0, 0, 0, 0, 0); task != nil {
-		// from libiscsi
-		// ok = task->status == SCSI_STATUS_GOOD ||
-		// (task->status == SCSI_STATUS_CHECK_CONDITION &&
-		//  task->sense.key == SCSI_SENSE_ILLEGAL_REQUEST &&
-		//  task->sense.ascq == SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT);
-		litter.Dump(task.status)
-		litter.Dump(task.sense.ascq)
-		litter.Dump(task.sense.key)
-		// TODO: (willgorman) better error handling/reporting
-	} else {
-		errstr := C.iscsi_get_error(ctx)
-		log.Printf("iscsi_write16_sync: %s", C.GoString(errstr))
-		return -1
+
+	err = device.Write16(Write16{
+		LBA:       0,
+		Data:      data,
+		BlockSize: capacity.BlockSize,
+	})
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	// TODO: (willgorman) read the data back
-	// iscsi_read16_sync(struct iscsi_context *iscsi, int lun, uint64_t lba,
-	// 	uint32_t datalen, int blocksize,
-	// 	int rdprotect, int dpo, int fua, int fua_nv, int group_number)
-	if task := C.iscsi_read16_sync(ctx, 0, 2, 512, 512, 0, 0, 0, 0, 0); task != nil {
-		size := task.datain.size
-		dataread := unsafe.Slice(task.datain.data, size)
-		litter.Dump(string(dataread))
-
-	} else {
-		errstr := C.iscsi_get_error(ctx)
-		log.Printf("iscsi_read16_sync: %s", C.GoString(errstr))
-		return -1
+	dataread, err := device.Read16(Read16{
+		LBA:       0,
+		Blocks:    1,
+		BlockSize: 512,
+	})
+	if err != nil {
+		log.Fatalln(err)
 	}
-	return 0
-}
-
-func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
-	cap := C.struct_scsi_readcapacity10{}
-
-	if task.cdb[0] != C.SCSI_OPCODE_READCAPACITY10 {
-		return cap, errors.New("unexpected opcode")
-	}
-	if task.datain.size != 8 {
-		return cap, errors.New("unexpected size")
-	}
-
-	dataread := unsafe.Slice(task.datain.data, task.datain.size)
-	databytes := []byte(string(dataread))
-	cap.lba = C.uint(binary.BigEndian.Uint32(databytes[:4]))
-	cap.block_size = C.uint(binary.BigEndian.Uint32(databytes[4:]))
-	return cap, nil
+	litter.Dump("hey!", string(dataread))
 }
