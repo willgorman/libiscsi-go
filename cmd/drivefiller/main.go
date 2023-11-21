@@ -5,13 +5,14 @@ import (
 	"os"
 
 	"github.com/sanity-io/litter"
+	iscsi "github.com/willgorman/libiscsi-go"
 )
 
 func main() {
 	if len(os.Args) != 3 {
 		panic("missing required args")
 	}
-	device := New(ConnectionDetails{
+	device := iscsi.New(iscsi.ConnectionDetails{
 		InitiatorIQN: os.Args[1],
 		TargetURL:    os.Args[2],
 	})
@@ -30,7 +31,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	data := []byte("AAAABBBBCCCCAAAABBBBCCCCDDDD")
+	data := []byte("hello iscsi")
 	// TODO: (willgorman) handle data > block size or just let it truncate?
 	if len(data) < capacity.BlockSize {
 		dataCopy := make([]byte, capacity.BlockSize)
@@ -40,7 +41,7 @@ func main() {
 
 	litter.Dump(string(data))
 
-	err = device.Write16(Write16{
+	err = device.Write16(iscsi.Write16{
 		LBA:       0,
 		Data:      data,
 		BlockSize: capacity.BlockSize,
@@ -49,7 +50,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	dataread, err := device.Read16(Read16{
+	dataread, err := device.Read16(iscsi.Read16{
 		LBA:       0,
 		Blocks:    1,
 		BlockSize: 512,

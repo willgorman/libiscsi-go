@@ -1,4 +1,4 @@
-package main
+package iscsi
 
 /*
 #cgo CFLAGS: -g -Wall
