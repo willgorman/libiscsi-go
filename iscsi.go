@@ -1,10 +1,9 @@
 package iscsi
 
 /*
-#cgo CFLAGS: -g -Wall
-#cgo LDFLAGS: -L/opt/homebrew/lib -liscsi
-#include "/opt/homebrew/Cellar/libiscsi/1.19.0/include/iscsi/iscsi.h"
-#include "/opt/homebrew/Cellar/libiscsi/1.19.0/include/iscsi/scsi-lowlevel.h"
+#cgo pkg-config: libiscsi
+#include "iscsi/iscsi.h"
+#include "iscsi/scsi-lowlevel.h"
 */
 import "C"
 
@@ -103,7 +102,7 @@ func (d device) Write16(data Write16) error {
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
-		C.ulonglong(data.LBA), &carr[0], C.uint(len(carr)), C.int(data.BlockSize), 0, 0, 0, 0, 0)
+		C.uint64_t(data.LBA), &carr[0], C.uint(len(carr)), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil {
 		// TODO: (willgorman) robust error checking of condition, sense key, etc
 		// from libiscsi
@@ -124,7 +123,7 @@ type Read16 struct {
 }
 
 func (d device) Read16(data Read16) ([]byte, error) {
-	task := C.iscsi_read16_sync(d.Context, 0, C.ulonglong(data.LBA),
+	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil {
 		errstr := C.iscsi_get_error(d.Context)
