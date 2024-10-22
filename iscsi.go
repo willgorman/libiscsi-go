@@ -11,10 +11,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 	"unsafe"
 
 	"github.com/avast/retry-go/v4"
+	gopointer "github.com/mattn/go-pointer"
+	"github.com/sanity-io/litter"
 )
 
 type (
@@ -49,6 +52,7 @@ func New(details ConnectionDetails) device {
 func (d device) Connect() error {
 	_ = C.iscsi_set_session_type(d.Context, C.ISCSI_SESSION_NORMAL)
 	_ = C.iscsi_set_header_digest(d.Context, C.ISCSI_HEADER_DIGEST_NONE_CRC32C)
+	// _ = C.iscsi_set_tcp_keepintvl(d.Context, 100)
 
 	return retry.Do(func() error {
 		if retval := C.iscsi_full_connect_sync(d.Context, C.CString(d.targetPortal), C.int(d.targetLun)); retval != 0 {
@@ -61,6 +65,15 @@ func (d device) Connect() error {
 		}
 		return nil
 	}, retry.Attempts(20), retry.MaxDelay(500*time.Millisecond))
+}
+
+func (d device) Reconnect() error {
+	if retval := C.iscsi_reconnect_sync(d.Context); retval != 0 {
+		if retval != 0 {
+			return fmt.Errorf("failed to reconnect with: %d", retval)
+		}
+	}
+	return nil
 }
 
 func (d device) Disconnect() error {
@@ -136,6 +149,28 @@ func (d device) Read16(data Read16) ([]byte, error) {
 	return []byte(string(dataread)), nil
 }
 
+func (d device) Read16Async(data Read16) (<-chan []byte, <-chan error) {
+	errs := make(chan error, 1)
+	bytes := make(chan []byte)
+	foo := "foo"
+	pdata := gopointer.Save(foo)
+	log.Println("WHHYYYYYYYYYYYY")
+	// probably not? since the callback is async we can't release private data until it's done
+	defer gopointer.Unref(pdata)
+	task := C.iscsi_read16_task(d.Context, 0, C.uint64_t(data.LBA),
+		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0, cback, pdata)
+	if task == nil {
+		errs <- errors.New("unable to start iscsi_read16_task")
+		return bytes, errs
+	}
+	// wtf(d.Context)
+
+	// TODO: (willgorman) get the chans to the callback
+	litter.Dump(task.status, task.sense.key)
+	time.Sleep(2 * time.Second)
+	return bytes, errs
+}
+
 func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
 	cap := C.struct_scsi_readcapacity10{}
 
@@ -151,4 +186,10 @@ func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, err
 	cap.lba = C.uint(binary.BigEndian.Uint32(databytes[:4]))
 	cap.block_size = C.uint(binary.BigEndian.Uint32(databytes[4:]))
 	return cap, nil
+}
+
+//export read16CB
+func read16CB(ctx iscsiContext, status int, command_data, private_data unsafe.Pointer) {
+	thdata := gopointer.Restore(private_data).(string)
+	log.Println("OMG IT WORKED", thdata)
 }

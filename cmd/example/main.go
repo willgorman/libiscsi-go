@@ -50,7 +50,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	dataread, err := device.Read16(iscsi.Read16{
+	_, _ = device.Read16Async(iscsi.Read16{
 		LBA:       0,
 		Blocks:    1,
 		BlockSize: 512,
@@ -58,5 +58,5 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	litter.Dump("hey!", string(dataread))
+	// litter.Dump("hey!", string(dataread))
 }

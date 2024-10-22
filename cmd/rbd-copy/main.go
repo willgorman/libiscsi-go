@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/ceph/go-ceph/rados"
 	"github.com/ceph/go-ceph/rbd"
@@ -55,7 +56,7 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 		return 0, errors.New("out of bounds")
 	}
 	blocks := (len(p) / r.blockSize) + 1
-	log.Println("blocks ", blocks)
+	// log.Println("blocks ", blocks)
 	readbytes, err := r.dev.Read16(iscsi.Read16{
 		LBA:       int(start),
 		Blocks:    blocks,
@@ -103,8 +104,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < 10; i++ {
-		log.Println("block ", i)
+	start := time.Now()
+	for i := 0; i < reader.blocks; i++ {
+		if i%(1024) == 0 {
+			log.Println("block ", i)
+		}
+
 		thebytes := make([]byte, reader.blockSize)
 		_, err := reader.ReadAt(thebytes, int64(i*reader.blockSize))
 		if err != nil {
@@ -117,6 +122,7 @@ func main() {
 			log.Fatal("writing", err)
 		}
 	}
+	log.Printf("took %s", time.Since(start))
 
 	// img2, err := rbd.OpenImage(ioctx, imageName, rbd.NoSnapshot)
 	// if err != nil {
