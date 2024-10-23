@@ -18,6 +18,7 @@ import (
 	"github.com/avast/retry-go/v4"
 	gopointer "github.com/mattn/go-pointer"
 	"github.com/sanity-io/litter"
+	"golang.org/x/sys/unix"
 )
 
 type (
@@ -140,6 +141,9 @@ func (d device) Read16(data Read16) ([]byte, error) {
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
+		if C.GoString(errstr) == "Poll failed" {
+			return nil, errors.New("Poll failed")
+		}
 		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(errstr))
 	}
 
@@ -152,23 +156,68 @@ func (d device) Read16(data Read16) ([]byte, error) {
 func (d device) Read16Async(data Read16) (<-chan []byte, <-chan error) {
 	errs := make(chan error, 1)
 	bytes := make(chan []byte)
-	foo := "foo"
-	pdata := gopointer.Save(foo)
+	wait := make(chan struct{})
+	pdata := gopointer.Save(wait)
 	log.Println("WHHYYYYYYYYYYYY")
 	// probably not? since the callback is async we can't release private data until it's done
-	defer gopointer.Unref(pdata)
 	task := C.iscsi_read16_task(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0, cback, pdata)
 	if task == nil {
 		errs <- errors.New("unable to start iscsi_read16_task")
 		return bytes, errs
 	}
+	go func() {
+		for {
+			events := d.WhichEvents()
+			if events == 0 {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			log.Println("got events ", events)
+			fd := unix.PollFd{
+				Fd:      int32(d.GetFD()),
+				Events:  int16(events),
+				Revents: 0,
+			}
+			log.Println("polling ", fd)
+			_, err := unix.Poll([]unix.PollFd{fd}, -1)
+			if err != nil {
+				log.Fatal("oh no", err)
+			}
+			log.Println("polled ", fd)
+			if d.HandleEvents(fd.Revents) < 0 {
+				log.Fatal("welp idk")
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	// wtf(d.Context)
+	select {
+	case <-wait:
+		log.Println("AT LAST!")
+		litter.Dump(task.status, task.sense.key)
+	case <-time.After(10 * time.Second):
+		log.Println("TOO SLOW")
+		return bytes, errs
+	}
 
 	// TODO: (willgorman) get the chans to the callback
-	litter.Dump(task.status, task.sense.key)
+
 	time.Sleep(2 * time.Second)
 	return bytes, errs
+}
+
+func (d device) GetFD() int {
+	return int(C.iscsi_get_fd(d.Context))
+}
+
+func (d device) WhichEvents() int {
+	return int(C.iscsi_which_events(d.Context))
+}
+
+func (d device) HandleEvents(n int16) int {
+	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 
 func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
@@ -190,6 +239,7 @@ func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, err
 
 //export read16CB
 func read16CB(ctx iscsiContext, status int, command_data, private_data unsafe.Pointer) {
-	thdata := gopointer.Restore(private_data).(string)
+	thdata := gopointer.Restore(private_data).(chan struct{})
+	close(thdata)
 	log.Println("OMG IT WORKED", thdata)
 }

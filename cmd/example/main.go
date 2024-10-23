@@ -50,7 +50,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	_, _ = device.Read16Async(iscsi.Read16{
+	_, _ = device.Read16(iscsi.Read16{
 		LBA:       0,
 		Blocks:    1,
 		BlockSize: 512,

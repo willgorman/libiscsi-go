@@ -15,10 +15,3 @@ import "C"
 
 // var read16Callback = C.read16CBCgo1
 var cback = C.iscsi_command_cb(C.read16CBCgo1)
-
-// func wtf(ctx iscsiContext) {
-// 	foo := "foo"
-// 	ptr := gopointer.Save(foo)
-// 	defer gopointer.Unref(ptr)
-// 	C.read16CBCgo1(ctx, 3, nil, ptr)
-// }
