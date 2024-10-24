@@ -17,8 +17,6 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	gopointer "github.com/mattn/go-pointer"
-	"github.com/sanity-io/litter"
-	"golang.org/x/sys/unix"
 )
 
 type (
@@ -158,7 +156,6 @@ func (d device) Read16Async(data Read16) (<-chan []byte, <-chan error) {
 	bytes := make(chan []byte)
 	wait := make(chan struct{})
 	pdata := gopointer.Save(wait)
-	log.Println("WHHYYYYYYYYYYYY")
 	// probably not? since the callback is async we can't release private data until it's done
 	task := C.iscsi_read16_task(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0, cback, pdata)
@@ -166,38 +163,42 @@ func (d device) Read16Async(data Read16) (<-chan []byte, <-chan error) {
 		errs <- errors.New("unable to start iscsi_read16_task")
 		return bytes, errs
 	}
-	go func() {
-		for {
-			events := d.WhichEvents()
-			if events == 0 {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			log.Println("got events ", events)
-			fd := unix.PollFd{
-				Fd:      int32(d.GetFD()),
-				Events:  int16(events),
-				Revents: 0,
-			}
-			log.Println("polling ", fd)
-			_, err := unix.Poll([]unix.PollFd{fd}, -1)
-			if err != nil {
-				log.Fatal("oh no", err)
-			}
-			log.Println("polled ", fd)
-			if d.HandleEvents(fd.Revents) < 0 {
-				log.Fatal("welp idk")
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		events := d.WhichEvents()
+	// 		if events == 0 {
+	// 			time.Sleep(1 * time.Second)
+	// 			continue
+	// 		}
+	// 		log.Println("got events ", events)
+	// 		fd := unix.PollFd{
+	// 			Fd:      int32(d.GetFD()),
+	// 			Events:  int16(events),
+	// 			Revents: 0,
+	// 		}
+
+	// 		fds := []unix.PollFd{fd}
+	// 		log.Println("polling ", fds[0])
+	// 		_, err := unix.Poll(fds, -1)
+	// 		if err != nil {
+	// 			log.Fatal("oh no", err)
+	// 		}
+	// 		log.Println("polled ", fds[0])
+	// 		// I think we have to call this with fds[0], not fd.
+	// 		// fds[0] is what actually gets updated, fd is just a copy
+	// 		if d.HandleEvents(fds[0].Revents) < 0 {
+	// 			log.Fatal("welp idk")
+	// 		}
+	// 		time.Sleep(1 * time.Second)
+	// 	}
+	// }()
 
 	// wtf(d.Context)
 	select {
 	case <-wait:
 		log.Println("AT LAST!")
-		litter.Dump(task.status, task.sense.key)
-	case <-time.After(10 * time.Second):
+		return bytes, errs
+	case <-time.After(20 * time.Second):
 		log.Println("TOO SLOW")
 		return bytes, errs
 	}
