@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -39,7 +40,7 @@ func New(initiatorIQN, targetURL string) (*reader, error) {
 	return &reader{
 		dev:       d,
 		blockSize: cap.BlockSize,
-		blocks:    cap.LBA + 1, // FIXME: (willgorman) figure out why this looks to be 1 off
+		blocks:    cap.LBA + 1, // wtf, why does this look like it's one off
 	}, nil
 }
 
@@ -122,37 +123,36 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	imgSize, err := img.GetSize()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if imgSize != uint64(reader.blockSize)*uint64(reader.blocks) {
+		log.Fatal("different sizes ", imgSize, reader.blockSize*reader.blocks)
+	}
+	// log.Println("WTF ", reader.blockSize*reader.blocks, reader.blocks, reader.blockSize)
 	start := time.Now()
-	blockChunk := 1024
+	blockChunk := 2048
 	bar := pb.StartNew(reader.blocks / blockChunk)
 	for i := 0; i < (reader.blockSize * reader.blocks); i = i + (reader.blockSize * blockChunk) {
-
-		thebytes := make([]byte, reader.blockSize*blockChunk)
-		_, err := reader.ReadAt(thebytes, int64(i))
+		scsiBytes := make([]byte, reader.blockSize*blockChunk)
+		_, err := reader.ReadAt(scsiBytes, int64(i))
 		if err != nil {
 			log.Fatal(err)
 		}
-		// FIXME: (willgorman) I think we have to check for ranges of empty blocks
-		// otherwise we write zeros to the target.  that may be fine but it seems
-		// like it makes Ceph count that space as used
-		// or we could call Sparsify on the image after? but Sparsify can't go
-		// lower than 4096 so we could have up to 4 empty sequential blocks still allocated?
-		if _, err = img.WriteAt(thebytes, int64(i)); err != nil {
-			log.Fatal("writing ", err)
-		}
-		if err = img.Flush(); err != nil {
-			log.Fatal("flush ", err)
+		rbdBytes := make([]byte, reader.blockSize*blockChunk)
+		if _, err = img.ReadAt(rbdBytes, int64(i)); err != nil {
+			log.Fatal("rbd read", err)
 		}
 
+		if !bytes.Equal(scsiBytes, rbdBytes) {
+			log.Fatalf("mismatched block at %d", i/reader.blockSize)
+		}
 		bar.Increment()
 	}
 	bar.Finish()
 	log.Printf("took %s", time.Since(start))
-
-	err = img.Sparsify(4096)
-	if err != nil {
-		log.Fatal("sparsify ", err)
-	}
 
 	// img2, err := rbd.OpenImage(ioctx, imageName, rbd.NoSnapshot)
 	// if err != nil {
