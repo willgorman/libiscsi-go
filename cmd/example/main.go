@@ -1,13 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
-	"time"
 
 	"github.com/sanity-io/litter"
 	iscsi "github.com/willgorman/libiscsi-go"
-	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -54,45 +53,58 @@ func main() {
 	// FIXME: (willgorman) figure out timing issues.  it doesn't work right without
 	// the sleeps which seems bad
 
-	go func() {
-		for {
-			events := device.WhichEvents()
-			if events == 0 {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			log.Println("got events ", events)
-			fd := unix.PollFd{
-				Fd:      int32(device.GetFD()),
-				Events:  int16(events),
-				Revents: 0,
-			}
+	// go func() {
+	// 	for {
+	// 		events := device.WhichEvents()
+	// 		if events == 0 {
+	// 			time.Sleep(1 * time.Second)
+	// 			continue
+	// 		}
+	// 		log.Println("got events ", events)
+	// 		fd := unix.PollFd{
+	// 			Fd:      int32(device.GetFD()),
+	// 			Events:  int16(events),
+	// 			Revents: 0,
+	// 		}
 
-			fds := []unix.PollFd{fd}
-			log.Println("polling ", fds[0])
-			_, err := unix.Poll(fds, -1)
-			if err != nil {
-				log.Fatal("oh no", err)
-			}
-			log.Println("polled ", fds[0])
-			// I think we have to call this with fds[0], not fd.
-			// fds[0] is what actually gets updated, fd is just a copy
-			if device.HandleEvents(fds[0].Revents) < 0 {
-				log.Fatal("welp idk")
-			}
-			time.Sleep(1 * time.Second)
-		}
-	}()
+	// 		fds := []unix.PollFd{fd}
+	// 		log.Println("polling ", fds[0])
+	// 		_, err := unix.Poll(fds, -1)
+	// 		if err != nil {
+	// 			log.Fatal("oh no", err)
+	// 		}
+	// 		log.Println("polled ", fds[0])
+	// 		// I think we have to call this with fds[0], not fd.
+	// 		// fds[0] is what actually gets updated, fd is just a copy
+	// 		if device.HandleEvents(fds[0].Revents) < 0 {
+	// 			log.Fatal("welp idk")
+	// 		}
+	// 		time.Sleep(1 * time.Second)
+	// 	}
+	// }()
+	go device.ProcessAsync(context.Background())
+	tasks := make(chan iscsi.TaskResult)
 	for i := 0; i < 3; i++ {
-		_, _ = device.Read16Async(iscsi.Read16{
+		err = device.Read16Async(iscsi.Read16{
 			LBA:       0,
 			Blocks:    1,
 			BlockSize: 512,
-		})
+		}, tasks)
 		if err != nil {
 			log.Fatalln(err)
 		}
 	}
+
+	for i := 0; i < 3; i++ {
+		result := <-tasks
+		if result.Err != nil {
+			log.Fatal("task err ", result.Err)
+		}
+		readBytes := result.Task.GetDataIn()
+		log.Println("read ", len(readBytes), " bytes")
+		litter.Dump(result.Context)
+	}
+	close(tasks)
 
 	// _, _ = device.Read16(iscsi.Read16{
 	// 	LBA:       0,

@@ -8,6 +8,7 @@ package iscsi
 import "C"
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	gopointer "github.com/mattn/go-pointer"
+	"golang.org/x/sys/unix"
 )
 
 type (
@@ -151,62 +153,62 @@ func (d device) Read16(data Read16) ([]byte, error) {
 	return []byte(string(dataread)), nil
 }
 
-func (d device) Read16Async(data Read16) (<-chan []byte, <-chan error) {
-	errs := make(chan error, 1)
-	bytes := make(chan []byte)
-	wait := make(chan struct{})
-	pdata := gopointer.Save(wait)
-	// probably not? since the callback is async we can't release private data until it's done
+func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
+	cdata := callbackData{
+		tasks: tasks,
+		// add the read request so the callback can tell what lba the read
+		// started at.  i suspect this is probably also in the scsi_task
+		// but this is simple enough for now
+		context: data,
+	}
+	pdata := gopointer.Save(cdata)
+	// can't call unref until the callback is done
 	task := C.iscsi_read16_task(d.Context, 0, C.uint64_t(data.LBA),
-		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0, cback, pdata)
+		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0, channelCB, pdata)
 	if task == nil {
-		errs <- errors.New("unable to start iscsi_read16_task")
-		return bytes, errs
-	}
-	// go func() {
-	// 	for {
-	// 		events := d.WhichEvents()
-	// 		if events == 0 {
-	// 			time.Sleep(1 * time.Second)
-	// 			continue
-	// 		}
-	// 		log.Println("got events ", events)
-	// 		fd := unix.PollFd{
-	// 			Fd:      int32(d.GetFD()),
-	// 			Events:  int16(events),
-	// 			Revents: 0,
-	// 		}
-
-	// 		fds := []unix.PollFd{fd}
-	// 		log.Println("polling ", fds[0])
-	// 		_, err := unix.Poll(fds, -1)
-	// 		if err != nil {
-	// 			log.Fatal("oh no", err)
-	// 		}
-	// 		log.Println("polled ", fds[0])
-	// 		// I think we have to call this with fds[0], not fd.
-	// 		// fds[0] is what actually gets updated, fd is just a copy
-	// 		if d.HandleEvents(fds[0].Revents) < 0 {
-	// 			log.Fatal("welp idk")
-	// 		}
-	// 		time.Sleep(1 * time.Second)
-	// 	}
-	// }()
-
-	// wtf(d.Context)
-	select {
-	case <-wait:
-		log.Println("AT LAST!")
-		return bytes, errs
-	case <-time.After(20 * time.Second):
-		log.Println("TOO SLOW")
-		return bytes, errs
+		return errors.New("unable to start iscsi_read16_task")
 	}
 
-	// TODO: (willgorman) get the chans to the callback
+	return nil
+}
 
-	time.Sleep(2 * time.Second)
-	return bytes, errs
+// this should be able to run as `go ProcessAsync(ctx)` and
+// pump iscsi requests until the context is done
+func (d device) ProcessAsync(ctx context.Context) error {
+	// FIXME: (willgorman) figure out timing issues.  it doesn't work right without
+	// the sleeps which seems bad
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			// log.Println("wat")
+			events := d.WhichEvents()
+			if events == 0 {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			fd := unix.PollFd{
+				Fd:      int32(d.GetFD()),
+				Events:  int16(events),
+				Revents: 0,
+			}
+
+			fds := []unix.PollFd{fd}
+			// log.Println("pollin ", fds[0])
+			_, err := unix.Poll(fds, 1000)
+			if err != nil {
+				log.Fatal("oh no", err)
+			}
+			// log.Println("pollout ", fds[0])
+			// I think we have to call this with fds[0], not fd.
+			// fds[0] is what actually gets updated, fd is just a copy
+			if d.HandleEvents(fds[0].Revents) < 0 {
+				log.Fatal("welp idk")
+			}
+			// time.Sleep(1 * time.Second)
+		}
+	}
 }
 
 func (d device) GetFD() int {
@@ -243,4 +245,51 @@ func read16CB(ctx iscsiContext, status int, command_data, private_data unsafe.Po
 	thdata := gopointer.Restore(private_data).(chan struct{})
 	close(thdata)
 	log.Println("OMG IT WORKED", thdata)
+}
+
+// Don't want to expose C structs to callers and can't
+// embed C structs in a Go struct so we need getters
+type Task struct {
+	struct_scsi_task *C.struct_scsi_task
+}
+
+func (t Task) GetStatus() int {
+	return int(t.struct_scsi_task.status)
+}
+
+func (t Task) GetDataIn() []byte {
+	size := t.struct_scsi_task.datain.size
+	dataread := unsafe.Slice(t.struct_scsi_task.datain.data, size)
+	// surely there's a better way to get from []C.uchar to []byte?
+	return []byte(string(dataread))
+}
+
+type callbackData struct {
+	tasks   chan TaskResult
+	context any
+}
+
+type TaskResult struct {
+	Task    Task
+	Err     error
+	Context any
+}
+
+//export iscsiChannelCB
+func iscsiChannelCB(iscsiCtx iscsiContext, status int, command_data, private_data unsafe.Pointer) {
+	defer gopointer.Unref(private_data)
+	data := gopointer.Restore(private_data).(callbackData)
+
+	if status != C.SCSI_STATUS_GOOD {
+		data.tasks <- TaskResult{
+			Err: errors.New(C.GoString(C.iscsi_get_error(iscsiCtx))),
+		}
+		return
+	}
+	// get command data onto the channel
+	task := (*C.struct_scsi_task)(command_data)
+	data.tasks <- TaskResult{
+		Task:    Task{struct_scsi_task: task},
+		Context: data.context,
+	}
 }
