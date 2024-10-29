@@ -120,6 +120,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	ioctx, err := conn.OpenIOContext(poolName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer ioctx.Destroy()
+
+	img, err := rbd.OpenImage(ioctx, imageName, rbd.NoSnapshot)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer img.Close()
+
 	reader, err := New(initiatorIQN, targetURL)
 	if err != nil {
 		log.Fatal(err)
@@ -143,17 +155,6 @@ func main() {
 	// start goroutines to write
 	for i := 0; i < 4; i++ {
 		go func() {
-			ioctx, err := conn.OpenIOContext(poolName)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer ioctx.Destroy()
-
-			img, err := rbd.OpenImage(ioctx, imageName, rbd.NoSnapshot)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer img.Close()
 			for t := range reader.tasks {
 				if t.Err != nil {
 					log.Fatal("reader.tasks ", t.Err)
@@ -174,18 +175,6 @@ func main() {
 	wait.Wait()
 	bar.Finish()
 	log.Printf("took %s", time.Since(start))
-
-	ioctx, err := conn.OpenIOContext(poolName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ioctx.Destroy()
-
-	img, err := rbd.OpenImage(ioctx, imageName, rbd.NoSnapshot)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer img.Close()
 
 	err = img.Sparsify(4096)
 	if err != nil {
