@@ -142,25 +142,15 @@ func main() {
 	var wait sync.WaitGroup
 	wait.Add(reader.blocks / blockChunk)
 
-	go func() {
-		for i := 0; i < (reader.blockSize * reader.blocks); i = i + (reader.blockSize * blockChunk) {
-			thebytes := make([]byte, reader.blockSize*blockChunk)
-			err := reader.ReadAt(thebytes, int64(i))
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-	}()
-
 	// start goroutines to write
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 1; i++ {
 		go func() {
 			for t := range reader.tasks {
 				if t.Err != nil {
 					log.Fatal("reader.tasks ", t.Err)
 				}
 				readInfo := t.Context.(iscsi.Read16)
-				if _, err = img.WriteAt(t.Task.GetDataIn(), int64(readInfo.LBA)*int64(readInfo.BlockSize)); err != nil {
+				if _, err = img.WriteAt(t.Task.DataIn, int64(readInfo.LBA)*int64(readInfo.BlockSize)); err != nil {
 					log.Fatal("writing ", err)
 				}
 				if err = img.Flush(); err != nil {
@@ -170,6 +160,13 @@ func main() {
 				wait.Done()
 			}
 		}()
+	}
+	for i := 0; i < (reader.blockSize * reader.blocks); i = i + (reader.blockSize * blockChunk) {
+		thebytes := make([]byte, reader.blockSize*blockChunk)
+		err := reader.ReadAt(thebytes, int64(i))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	log.Println("waiting")
 	wait.Wait()

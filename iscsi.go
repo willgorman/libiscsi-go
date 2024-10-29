@@ -2,6 +2,7 @@ package iscsi
 
 /*
 #cgo pkg-config: libiscsi
+#include <stdlib.h>
 #include "iscsi/iscsi.h"
 #include "iscsi/scsi-lowlevel.h"
 */
@@ -13,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -26,6 +28,7 @@ type (
 )
 
 type device struct {
+	sync.Mutex
 	Context      iscsiContext
 	targetName   string
 	targetPortal string
@@ -92,6 +95,8 @@ type capacity struct {
 }
 
 func (d device) ReadCapacity10() (c capacity, err error) {
+	d.Lock()
+	defer d.Unlock()
 	task := C.iscsi_readcapacity10_sync(d.Context, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
@@ -113,6 +118,8 @@ type Write16 struct {
 }
 
 func (d device) Write16(data Write16) error {
+	d.Lock()
+	defer d.Unlock()
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
@@ -137,6 +144,8 @@ type Read16 struct {
 }
 
 func (d device) Read16(data Read16) ([]byte, error) {
+	d.Lock()
+	defer d.Unlock()
 	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
@@ -154,6 +163,8 @@ func (d device) Read16(data Read16) ([]byte, error) {
 }
 
 func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
+	d.Lock()
+	defer d.Unlock()
 	cdata := callbackData{
 		tasks: tasks,
 		// add the read request so the callback can tell what lba the read
@@ -198,7 +209,9 @@ func (d device) ProcessAsync(ctx context.Context) error {
 			// log.Println("pollin ", fds[0])
 			_, err := unix.Poll(fds, 1000)
 			if err != nil {
-				log.Fatal("oh no", err)
+				if err.Error() != "interrupted system call" {
+					log.Fatal("oh no", err)
+				}
 			}
 			// log.Println("pollout ", fds[0])
 			// I think we have to call this with fds[0], not fd.
@@ -212,14 +225,20 @@ func (d device) ProcessAsync(ctx context.Context) error {
 }
 
 func (d device) GetFD() int {
+	d.Lock()
+	defer d.Unlock()
 	return int(C.iscsi_get_fd(d.Context))
 }
 
 func (d device) WhichEvents() int {
+	d.Lock()
+	defer d.Unlock()
 	return int(C.iscsi_which_events(d.Context))
 }
 
 func (d device) HandleEvents(n int16) int {
+	d.Lock()
+	defer d.Unlock()
 	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 
@@ -250,18 +269,8 @@ func read16CB(ctx iscsiContext, status int, command_data, private_data unsafe.Po
 // Don't want to expose C structs to callers and can't
 // embed C structs in a Go struct so we need getters
 type Task struct {
-	struct_scsi_task *C.struct_scsi_task
-}
-
-func (t Task) GetStatus() int {
-	return int(t.struct_scsi_task.status)
-}
-
-func (t Task) GetDataIn() []byte {
-	size := t.struct_scsi_task.datain.size
-	dataread := unsafe.Slice(t.struct_scsi_task.datain.data, size)
-	// surely there's a better way to get from []C.uchar to []byte?
-	return []byte(string(dataread))
+	Status int
+	DataIn []byte
 }
 
 type callbackData struct {
@@ -288,8 +297,26 @@ func iscsiChannelCB(iscsiCtx iscsiContext, status int, command_data, private_dat
 	}
 	// get command data onto the channel
 	task := (*C.struct_scsi_task)(command_data)
+	defer C.free(command_data)
+
 	data.tasks <- TaskResult{
-		Task:    Task{struct_scsi_task: task},
+		// TODO: (willgorman) should we copy data out of the task and free it here?
+		Task: Task{
+			Status: int(task.status),
+			DataIn: getDataIn(task),
+		},
 		Context: data.context,
 	}
+}
+
+func getDataIn(t *C.struct_scsi_task) []byte {
+	size := t.datain.size
+	dataread := unsafe.Slice(t.datain.data, size)
+	// surely there's a better way to get from []C.uchar to []byte?
+	databytes := []byte(string(dataread))
+	// TESTCODE.  probably remove, didn't help with segfault
+	out := make([]byte, size)
+	copy(out, databytes)
+	// TESTCODE
+	return out
 }
