@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -28,7 +27,6 @@ type (
 )
 
 type device struct {
-	sync.Mutex
 	Context      iscsiContext
 	targetName   string
 	targetPortal string
@@ -57,7 +55,7 @@ func (d device) Connect() error {
 	_ = C.iscsi_set_session_type(d.Context, C.ISCSI_SESSION_NORMAL)
 	_ = C.iscsi_set_header_digest(d.Context, C.ISCSI_HEADER_DIGEST_NONE_CRC32C)
 	// _ = C.iscsi_set_tcp_keepintvl(d.Context, 100)
-
+	log.Println("PRECONNECT FD: ", d.GetFD(), &d)
 	return retry.Do(func() error {
 		if retval := C.iscsi_full_connect_sync(d.Context, C.CString(d.targetPortal), C.int(d.targetLun)); retval != 0 {
 			// it appears that sometimes a connection can partially succeed such that we
@@ -67,6 +65,7 @@ func (d device) Connect() error {
 			errstr := C.iscsi_get_error(d.Context)
 			return fmt.Errorf("iscsi_full_connect_sync: (%d) %s", retval, C.GoString(errstr))
 		}
+		log.Println("CONNECT FD: ", d.GetFD(), &d)
 		return nil
 	}, retry.Attempts(20), retry.MaxDelay(500*time.Millisecond))
 }
@@ -95,8 +94,6 @@ type capacity struct {
 }
 
 func (d device) ReadCapacity10() (c capacity, err error) {
-	d.Lock()
-	defer d.Unlock()
 	task := C.iscsi_readcapacity10_sync(d.Context, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
@@ -118,8 +115,6 @@ type Write16 struct {
 }
 
 func (d device) Write16(data Write16) error {
-	d.Lock()
-	defer d.Unlock()
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
@@ -144,8 +139,6 @@ type Read16 struct {
 }
 
 func (d device) Read16(data Read16) ([]byte, error) {
-	d.Lock()
-	defer d.Unlock()
 	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
@@ -163,8 +156,6 @@ func (d device) Read16(data Read16) ([]byte, error) {
 }
 
 func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
-	d.Lock()
-	defer d.Unlock()
 	cdata := callbackData{
 		tasks: tasks,
 		// add the read request so the callback can tell what lba the read
@@ -225,20 +216,14 @@ func (d device) ProcessAsync(ctx context.Context) error {
 }
 
 func (d device) GetFD() int {
-	d.Lock()
-	defer d.Unlock()
 	return int(C.iscsi_get_fd(d.Context))
 }
 
 func (d device) WhichEvents() int {
-	d.Lock()
-	defer d.Unlock()
 	return int(C.iscsi_which_events(d.Context))
 }
 
 func (d device) HandleEvents(n int16) int {
-	d.Lock()
-	defer d.Unlock()
 	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 

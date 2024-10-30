@@ -13,6 +13,7 @@ require (
 
 require (
 	github.com/fatih/color v1.15.0 // indirect
+	github.com/ianlancetaylor/cgosymbolizer v0.0.0-20241025222116-6b205f073fdd // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
