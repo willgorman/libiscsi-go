@@ -67,7 +67,6 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 	if (int(start)+blocks)*r.blockSize > (r.blockSize * r.blocks) {
 		return 0, errors.New("out of bounds")
 	}
-	// log.Println("blocks ", blocks)
 	attempts := 0
 read16:
 	readbytes, err := r.dev.Read16(iscsi.Read16{
@@ -80,7 +79,6 @@ read16:
 		if err.Error() == "Poll failed" && attempts < 10 {
 			goto read16
 		}
-		log.Println("start ", start, "blocks ", blocks, "off", off, "allblocks", r.blocks)
 		return 0, err // TODO: return the bytes read anyway?
 	}
 	// FIXME: (willgorman) handle non block aligned reads and reads of partial blocks
@@ -131,7 +129,6 @@ func main() {
 	if imgSize != uint64(reader.blockSize)*uint64(reader.blocks) {
 		log.Fatal("different sizes ", imgSize, reader.blockSize*reader.blocks)
 	}
-	// log.Println("WTF ", reader.blockSize*reader.blocks, reader.blocks, reader.blockSize)
 	start := time.Now()
 	blockChunk := 2048
 	bar := pb.StartNew(reader.blocks / blockChunk)

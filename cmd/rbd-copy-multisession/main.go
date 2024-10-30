@@ -58,7 +58,6 @@ func New(initiatorIQN, targetURL string, numReaders int) ([]*reader, error) {
 	var offset int
 	for i := 0; i < numReaders; i++ {
 		if i == 0 {
-			log.Println("added iscsi session")
 			// reuse the session for the first
 			readers = append(readers, &reader{
 				dev:       d,
@@ -80,7 +79,6 @@ func New(initiatorIQN, targetURL string, numReaders int) ([]*reader, error) {
 				blocks:    blocksPerReader,
 				offset:    offset,
 			})
-			log.Println("added new")
 		}
 		offset += blocksPerReader
 	}
@@ -107,14 +105,9 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 
 	// TODO: (willgorman) deal with non-block aligned reads.  might need to read into the next block
 	blocks := (len(p) / r.blockSize)
-	// if r.offset > 0 {
-	// 	log.Println("start ", start, "blocks ", blocks)
-	// 	log.Println("r.blockSize*r.blocks ", r.blockSize*r.blocks, "r.offset*r.blockSize ", r.offset*r.blockSize)
-	// }
 	if (int(start)+blocks)*r.blockSize > (r.blockSize*r.blocks)+r.offset*r.blockSize {
 		return 0, errors.New("out of bounds")
 	}
-	// log.Println("blocks ", blocks)
 	attempts := 0
 read16:
 	readbytes, err := r.dev.Read16(iscsi.Read16{
@@ -127,7 +120,6 @@ read16:
 		if err.Error() == "Poll failed" && attempts < 10 {
 			goto read16
 		}
-		log.Println("start ", start, "blocks ", blocks, "off", off, "allblocks", r.blocks)
 		return 0, err // TODO: return the bytes read anyway?
 	}
 	// FIXME: (willgorman) handle non block aligned reads and reads of partial blocks
@@ -175,28 +167,20 @@ func main() {
 	var totalBlocks int
 	for _, reader := range readers {
 		totalBlocks += reader.blocks
-		log.Println("FD: ", reader.dev.GetFD())
 	}
 	bar := pb.StartNew(totalBlocks / blockChunk)
 	var waiter sync.WaitGroup
-	log.Println("len readers ", len(readers))
+	log.Printf("using %d readers ", len(readers))
 	waiter.Add(len(readers))
 	first := 0
 	for _, r := range readers {
 		first++
 		go func(reader *reader, n int) {
-			// if n == 2 {
-			// 	time.Sleep(1 * time.Second)
-			// 	log.Println("DONE")
-			// } else {
-			// 	log.Println("GO")
-			// }
 			for i := 0; i < (reader.blockSize * reader.blocks); i = i + (reader.blockSize * blockChunk) {
 
 				thebytes := make([]byte, reader.blockSize*blockChunk)
 				_, err := reader.ReadAt(thebytes, int64(i))
 				if err != nil {
-					log.Println("offset ", reader.offset)
 					log.Fatal(err)
 				}
 				// FIXME: (willgorman) I think we have to check for ranges of empty blocks

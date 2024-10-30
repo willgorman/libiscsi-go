@@ -54,8 +54,6 @@ func New(details ConnectionDetails) device {
 func (d device) Connect() error {
 	_ = C.iscsi_set_session_type(d.Context, C.ISCSI_SESSION_NORMAL)
 	_ = C.iscsi_set_header_digest(d.Context, C.ISCSI_HEADER_DIGEST_NONE_CRC32C)
-	// _ = C.iscsi_set_tcp_keepintvl(d.Context, 100)
-	log.Println("PRECONNECT FD: ", d.GetFD(), &d)
 	return retry.Do(func() error {
 		if retval := C.iscsi_full_connect_sync(d.Context, C.CString(d.targetPortal), C.int(d.targetLun)); retval != 0 {
 			// it appears that sometimes a connection can partially succeed such that we
@@ -65,7 +63,6 @@ func (d device) Connect() error {
 			errstr := C.iscsi_get_error(d.Context)
 			return fmt.Errorf("iscsi_full_connect_sync: (%d) %s", retval, C.GoString(errstr))
 		}
-		log.Println("CONNECT FD: ", d.GetFD(), &d)
 		return nil
 	}, retry.Attempts(20), retry.MaxDelay(500*time.Millisecond))
 }
@@ -174,17 +171,17 @@ func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
 	return nil
 }
 
-// this should be able to run as `go ProcessAsync(ctx)` and
-// pump iscsi requests until the context is done
+// this is not safe to run in a goroutine other than the one
+// where all other operations on the iscsi connection are
+// being performed
+// TODO: i'm not sure this function even makes sense because
+// it can't run concurrently with iscsi operations
 func (d device) ProcessAsync(ctx context.Context) error {
-	// FIXME: (willgorman) figure out timing issues.  it doesn't work right without
-	// the sleeps which seems bad
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
-			// log.Println("wat")
 			events := d.WhichEvents()
 			if events == 0 {
 				time.Sleep(10 * time.Millisecond)
@@ -197,20 +194,17 @@ func (d device) ProcessAsync(ctx context.Context) error {
 			}
 
 			fds := []unix.PollFd{fd}
-			// log.Println("pollin ", fds[0])
 			_, err := unix.Poll(fds, 1000)
 			if err != nil {
 				if err.Error() != "interrupted system call" {
 					log.Fatal("oh no", err)
 				}
 			}
-			// log.Println("pollout ", fds[0])
 			// I think we have to call this with fds[0], not fd.
 			// fds[0] is what actually gets updated, fd is just a copy
 			if d.HandleEvents(fds[0].Revents) < 0 {
 				log.Fatal("welp idk")
 			}
-			// time.Sleep(1 * time.Second)
 		}
 	}
 }
@@ -242,13 +236,6 @@ func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, err
 	cap.lba = C.uint(binary.BigEndian.Uint32(databytes[:4]))
 	cap.block_size = C.uint(binary.BigEndian.Uint32(databytes[4:]))
 	return cap, nil
-}
-
-//export read16CB
-func read16CB(ctx iscsiContext, status int, command_data, private_data unsafe.Pointer) {
-	thdata := gopointer.Restore(private_data).(chan struct{})
-	close(thdata)
-	log.Println("OMG IT WORKED", thdata)
 }
 
 // Don't want to expose C structs to callers and can't
