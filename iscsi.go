@@ -31,6 +31,7 @@ type device struct {
 	targetName   string
 	targetPortal string
 	targetLun    int
+	details      ConnectionDetails
 }
 
 type ConnectionDetails struct {
@@ -38,36 +39,48 @@ type ConnectionDetails struct {
 	TargetURL    string
 }
 
-func New(details ConnectionDetails) device {
-	ctx := C.iscsi_create_context(C.CString(details.InitiatorIQN))
-	url := C.iscsi_parse_full_url(ctx, C.CString(details.TargetURL))
-	_ = C.iscsi_set_targetname(ctx, &url.target[0])
-	defer C.iscsi_destroy_url(url)
-	return device{
-		Context:      ctx,
-		targetName:   C.GoString(&url.target[0]),
-		targetPortal: C.GoString(&url.portal[0]),
-		targetLun:    int(url.lun),
+func New(details ConnectionDetails) *device {
+	return &device{
+		details: details,
 	}
 }
 
-func (d device) Connect() error {
+func (d *device) initializeContext() {
+	if d.Context != nil {
+		_ = C.iscsi_destroy_context(d.Context)
+		d.Context = nil
+		d.targetLun = 0
+		d.targetName = ""
+		d.targetPortal = ""
+	}
+	ctx := C.iscsi_create_context(C.CString(d.details.InitiatorIQN))
+	url := C.iscsi_parse_full_url(ctx, C.CString(d.details.TargetURL))
+	_ = C.iscsi_set_targetname(ctx, &url.target[0])
+	defer C.iscsi_destroy_url(url)
+	d.Context = ctx
+	d.targetLun = int(url.lun)
+	d.targetName = C.GoString(&url.target[0])
+	d.targetPortal = C.GoString(&url.portal[0])
 	_ = C.iscsi_set_session_type(d.Context, C.ISCSI_SESSION_NORMAL)
 	_ = C.iscsi_set_header_digest(d.Context, C.ISCSI_HEADER_DIGEST_NONE_CRC32C)
+}
+
+func (d *device) Connect() error {
+	d.initializeContext()
 	return retry.Do(func() error {
 		if retval := C.iscsi_full_connect_sync(d.Context, C.CString(d.targetPortal), C.int(d.targetLun)); retval != 0 {
-			// it appears that sometimes a connection can partially succeed such that we
-			// get an error retval but on a retry attempt get an error that we are already logged in.
-			// try logging out just to see if that helps with retries
-			_ = C.iscsi_logout_sync(d.Context)
 			errstr := C.iscsi_get_error(d.Context)
+			// reset the context before retrying.  it seems like some connection
+			// errors leave the context in an inconsistent state that makes it
+			// difficult to reuse
+			d.initializeContext()
 			return fmt.Errorf("iscsi_full_connect_sync: (%d) %s", retval, C.GoString(errstr))
 		}
 		return nil
 	}, retry.Attempts(20), retry.MaxDelay(500*time.Millisecond))
 }
 
-func (d device) Reconnect() error {
+func (d *device) Reconnect() error {
 	if retval := C.iscsi_reconnect_sync(d.Context); retval != 0 {
 		if retval != 0 {
 			return fmt.Errorf("failed to reconnect with: %d", retval)
@@ -76,12 +89,12 @@ func (d device) Reconnect() error {
 	return nil
 }
 
-func (d device) Disconnect() error {
+func (d *device) Disconnect() error {
+	defer C.iscsi_destroy_context(d.Context)
 	retval := C.iscsi_logout_sync(d.Context)
 	if retval != 0 {
 		return fmt.Errorf("failed to logout with: %d", retval)
 	}
-	_ = C.iscsi_destroy_context(d.Context)
 	return nil
 }
 
@@ -111,7 +124,7 @@ type Write16 struct {
 	BlockSize int
 }
 
-func (d device) Write16(data Write16) error {
+func (d *device) Write16(data Write16) error {
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
@@ -135,7 +148,7 @@ type Read16 struct {
 	BlockSize int
 }
 
-func (d device) Read16(data Read16) ([]byte, error) {
+func (d *device) Read16(data Read16) ([]byte, error) {
 	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
@@ -152,7 +165,7 @@ func (d device) Read16(data Read16) ([]byte, error) {
 	return []byte(string(dataread)), nil
 }
 
-func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
+func (d *device) Read16Async(data Read16, tasks chan TaskResult) error {
 	cdata := callbackData{
 		tasks: tasks,
 		// add the read request so the callback can tell what lba the read
@@ -176,7 +189,7 @@ func (d device) Read16Async(data Read16, tasks chan TaskResult) error {
 // being performed
 // TODO: i'm not sure this function even makes sense because
 // it can't run concurrently with iscsi operations
-func (d device) ProcessAsync(ctx context.Context) error {
+func (d *device) ProcessAsync(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -209,15 +222,15 @@ func (d device) ProcessAsync(ctx context.Context) error {
 	}
 }
 
-func (d device) GetFD() int {
+func (d *device) GetFD() int {
 	return int(C.iscsi_get_fd(d.Context))
 }
 
-func (d device) WhichEvents() int {
+func (d *device) WhichEvents() int {
 	return int(C.iscsi_which_events(d.Context))
 }
 
-func (d device) HandleEvents(n int16) int {
+func (d *device) HandleEvents(n int16) int {
 	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 
@@ -285,10 +298,5 @@ func getDataIn(t *C.struct_scsi_task) []byte {
 	size := t.datain.size
 	dataread := unsafe.Slice(t.datain.data, size)
 	// surely there's a better way to get from []C.uchar to []byte?
-	databytes := []byte(string(dataread))
-	// TESTCODE.  probably remove, didn't help with segfault
-	out := make([]byte, size)
-	copy(out, databytes)
-	// TESTCODE
-	return out
+	return []byte(string(dataread))
 }
