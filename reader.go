@@ -66,10 +66,14 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	}
 
 	blockOffset := r.offset % r.blocksize
+	log.Printf("OFFSET %d INTO BLOCK %d\n", blockOffset, startBlock)
+	log.Printf("OFFSET + LEN(P): %d | LEN(readBytes)-OFFSET: %d", int(blockOffset)+len(p), len(readBytes)-int(blockOffset))
 
+	log.Printf("LEN N WILL BE: %d", min(int(blockOffset)+len(p), len(readBytes)-int(blockOffset))-int(blockOffset))
 	r.offset = int64(endOffset)
 
-	return copy(p, readBytes[blockOffset:min(int(blockOffset)+len(p), len(readBytes)-int(blockOffset))]), err
+	// return copy(p, readBytes[blockOffset:min(int(blockOffset)+len(p), len(readBytes)-int(blockOffset))]), err
+	return copy(p, readBytes[blockOffset:min(int(blockOffset)+len(p), len(readBytes))]), err
 }
 
 func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
