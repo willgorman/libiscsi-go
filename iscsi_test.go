@@ -9,6 +9,7 @@ import (
 	_ "github.com/gostor/gotgt/pkg/port/iscsit"
 	"github.com/gostor/gotgt/pkg/scsi"
 	_ "github.com/gostor/gotgt/pkg/scsi/backingstore"
+	"github.com/hashicorp/consul/sdk/freeport"
 	iscsi "github.com/willgorman/libiscsi-go"
 )
 
@@ -33,8 +34,13 @@ func createTargetTempfile(t *testing.T, size int64) string {
 	return file.Name()
 }
 
-func TestWithGoTGT(t *testing.T) {
-	imgFile := createTargetTempfile(t, 10*MiB)
+// runTestTarget creates a sparse file backed iscsi target of the given
+// size and runs an iscsi server on a random ephmeral port.  The url
+// returned can be used by iscsi.ConnectionDetails
+func runTestTarget(t *testing.T, size int64) (url string) {
+	imgFile := createTargetTempfile(t, size)
+	port := freeport.GetOne(t)
+	targetIQN := "iqn.2024-10.com.example:0:0"
 	c := &config.Config{
 		Storages: []config.BackendStorage{
 			{
@@ -45,10 +51,10 @@ func TestWithGoTGT(t *testing.T) {
 			},
 		},
 		ISCSIPortals: []config.ISCSIPortalInfo{
-			{ID: 0, Portal: "127.0.0.1:3260"},
+			{ID: 0, Portal: fmt.Sprintf("127.0.0.1:%d", port)},
 		},
 		ISCSITargets: map[string]config.ISCSITarget{
-			"iqn.2024-10.com.example:0:0": {
+			targetIQN: {
 				TPGTs: map[string][]uint64{
 					"1": {0},
 				},
@@ -73,14 +79,17 @@ func TestWithGoTGT(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	go targetDriver.Run(3260)
-	defer targetDriver.Close()
+	go targetDriver.Run(port)
+	t.Cleanup(func() { _ = targetDriver.Close() })
+	return fmt.Sprintf("iscsi://127.0.0.1:%d/%s/0", port, targetIQN)
+}
 
+func TestWithGoTGT(t *testing.T) {
 	device := iscsi.New(iscsi.ConnectionDetails{
 		InitiatorIQN: "iqn.2024-10.libiscsi:go",
-		TargetURL:    "iscsi://127.0.0.1/iqn.2024-10.com.example:0:0/0",
+		TargetURL:    runTestTarget(t, 10*MiB),
 	})
-	err = device.Connect()
+	err := device.Connect()
 	if err != nil {
 		t.Fatal(err)
 	}
