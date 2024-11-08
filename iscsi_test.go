@@ -1,8 +1,11 @@
 package iscsi_test
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gostor/gotgt/pkg/config"
@@ -11,6 +14,7 @@ import (
 	_ "github.com/gostor/gotgt/pkg/scsi/backingstore"
 	"github.com/hashicorp/consul/sdk/freeport"
 	iscsi "github.com/willgorman/libiscsi-go"
+	"gotest.tools/assert"
 )
 
 const (
@@ -21,31 +25,66 @@ const (
 	TiB
 )
 
+var deviceID atomic.Int32
+
+func init() {
+	deviceID.Add(1000)
+}
+
 func createTargetTempfile(t *testing.T, size int64) string {
-	file, err := os.CreateTemp("", t.Name())
+	file, err := os.CreateTemp("", strings.ReplaceAll(t.Name(), "/", "_"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer file.Close()
 	t.Cleanup(func() { _ = os.Remove(file.Name()) })
-	err = file.Truncate(size)
-	if err != nil {
-		t.Fatal(err)
+	if size > 0 {
+		err = file.Truncate(size)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
+
 	return file.Name()
 }
 
-// runTestTarget creates a sparse file backed iscsi target of the given
+func writeTargetTempfile(t *testing.T, size int64) string {
+	fileName := createTargetTempfile(t, 0)
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	// it'd be better have to a reader than can generate random data on the fly
+	// instead of allocating the whole thing
+	data := make([]byte, size)
+	if _, err := rand.Read(data); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := file.Write(data); err != nil {
+		t.Fatal(err)
+	}
+
+	return fileName
+}
+
+// createAndRunTestTarget creates a sparse file backed iscsi target of the given
 // size and runs an iscsi server on a random ephmeral port.  The url
 // returned can be used by iscsi.ConnectionDetails
-func runTestTarget(t *testing.T, size int64) (url string) {
+func createAndRunTestTarget(t *testing.T, size int64) (url string) {
 	imgFile := createTargetTempfile(t, size)
+	return runTestTarget(t, imgFile)
+}
+
+func runTestTarget(t *testing.T, targetFile string) (url string) {
 	port := freeport.GetOne(t)
 	targetIQN := "iqn.2024-10.com.example:0:0"
 	c := &config.Config{
 		Storages: []config.BackendStorage{
 			{
-				DeviceID:         1000,
-				Path:             fmt.Sprintf("file:%s", imgFile),
+				DeviceID:         uint64(deviceID.Add(1)),
+				Path:             fmt.Sprintf("file:%s", targetFile),
 				Online:           true,
 				ThinProvisioning: true,
 			},
@@ -59,7 +98,7 @@ func runTestTarget(t *testing.T, size int64) (url string) {
 					"1": {0},
 				},
 				LUNs: map[string]uint64{
-					"0": 1000,
+					"0": uint64(deviceID.Load()),
 				},
 			},
 		},
@@ -87,7 +126,7 @@ func runTestTarget(t *testing.T, size int64) (url string) {
 func TestWithGoTGT(t *testing.T) {
 	device := iscsi.New(iscsi.ConnectionDetails{
 		InitiatorIQN: "iqn.2024-10.libiscsi:go",
-		TargetURL:    runTestTarget(t, 10*MiB),
+		TargetURL:    createAndRunTestTarget(t, 10*MiB),
 	})
 	err := device.Connect()
 	if err != nil {
@@ -114,4 +153,96 @@ func TestWithGoTGT(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("data", string(data))
+}
+
+func TestReadCapacity16(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		size     uint64
+		expected iscsi.Capacity
+	}{
+		{
+			desc: "1 MiB",
+			size: 1 * MiB,
+			expected: iscsi.Capacity{
+				LBA:       (1 * MiB / 512) - 1,
+				BlockSize: 512,
+			},
+		},
+		{
+			desc: "3 TiB",
+			size: 3 * TiB,
+			expected: iscsi.Capacity{
+				LBA:       (3 * TiB / 512) - 1,
+				BlockSize: 512,
+			},
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			device := iscsi.New(iscsi.ConnectionDetails{
+				InitiatorIQN: "iqn.2024-10.libiscsi:go",
+				TargetURL:    createAndRunTestTarget(t, int64(tC.size)),
+			})
+			err := device.Connect()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_ = device.Disconnect()
+			}()
+
+			cap, err := device.ReadCapacity16()
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, cap, tC.expected)
+		})
+	}
+}
+
+func TestReadCapacity10(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		size     uint64
+		expected iscsi.Capacity
+	}{
+		{
+			desc: "1 MiB",
+			size: 1 * MiB,
+			expected: iscsi.Capacity{
+				LBA:       (1 * MiB / 512) - 1,
+				BlockSize: 512,
+			},
+		},
+		{
+			desc: "3 TiB",
+			size: 3 * TiB,
+			expected: iscsi.Capacity{
+				LBA:       (2 * TiB / 512) - 1,
+				BlockSize: 512,
+			},
+		},
+	}
+	for _, tC := range testCases {
+		t.Run(tC.desc, func(t *testing.T) {
+			device := iscsi.New(iscsi.ConnectionDetails{
+				InitiatorIQN: "iqn.2024-10.libiscsi:go",
+				TargetURL:    createAndRunTestTarget(t, int64(tC.size)),
+			})
+			err := device.Connect()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				_ = device.Disconnect()
+			}()
+
+			cap, err := device.ReadCapacity10()
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, cap, tC.expected)
+		})
+	}
 }

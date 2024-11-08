@@ -98,23 +98,38 @@ func (d *device) Disconnect() error {
 	return nil
 }
 
-type capacity struct {
+type Capacity struct {
 	LBA       int
 	BlockSize int
 }
 
-func (d device) ReadCapacity10() (c capacity, err error) {
+func (d device) ReadCapacity10() (c Capacity, err error) {
 	task := C.iscsi_readcapacity10_sync(d.Context, 0, 0, 0)
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
 		return c, fmt.Errorf("iscsi_readcapacity10_sync: %s", C.GoString(errstr))
 	}
-	readcapacity, err := getReadCapacity(*task)
+	readcapacity, err := getReadCapacity10(*task)
 	if err != nil {
 		return c, err
 	}
 	c.BlockSize = int(readcapacity.block_size)
 	c.LBA = int(readcapacity.lba)
+	return c, nil
+}
+
+func (d device) ReadCapacity16() (c Capacity, err error) {
+	task := C.iscsi_readcapacity16_sync(d.Context, 0)
+	if task == nil || task.status != C.SCSI_STATUS_GOOD {
+		errstr := C.iscsi_get_error(d.Context)
+		return c, fmt.Errorf("iscsi_readcapacity16_sync: %s", C.GoString(errstr))
+	}
+	readcapacity, err := getReadCapacity16(*task)
+	if err != nil {
+		return c, err
+	}
+	c.BlockSize = int(readcapacity.block_length)
+	c.LBA = int(readcapacity.returned_lba)
 	return c, nil
 }
 
@@ -234,7 +249,7 @@ func (d *device) HandleEvents(n int16) int {
 	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 
-func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
+func getReadCapacity10(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
 	cap := C.struct_scsi_readcapacity10{}
 
 	if task.cdb[0] != C.SCSI_OPCODE_READCAPACITY10 {
@@ -249,6 +264,75 @@ func getReadCapacity(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, err
 	cap.lba = C.uint(binary.BigEndian.Uint32(databytes[:4]))
 	cap.block_size = C.uint(binary.BigEndian.Uint32(databytes[4:]))
 	return cap, nil
+}
+
+func getReadCapacity16(task C.struct_scsi_task) (C.struct_scsi_readcapacity16, error) {
+	cap := C.struct_scsi_readcapacity16{}
+	if task.cdb[0] != C.SCSI_OPCODE_SERVICE_ACTION_IN {
+		return cap, errors.New("unexpected opcode")
+	}
+	if task.cdb[1] != C.SCSI_READCAPACITY16 {
+		return cap, errors.New("unexpected subaction")
+	}
+
+	scsiTask := scsiTask{task: task}.init()
+	cap.returned_lba = (C.ulong(scsiTask.getUint32(0))<<32 | C.ulong(scsiTask.getUint32(4)))
+	cap.block_length = scsiTask.getUint32(8)
+	cap.p_type = (scsiTask.getUint8(12) >> 1) & 0x07
+	cap.prot_en = scsiTask.getUint8(12) & 0x01
+	cap.p_i_exp = (scsiTask.getUint8(13) >> 4) & 0x0f
+	cap.lbppbe = scsiTask.getUint8(13) & 0x0f
+	cap.lbpme = (scsiTask.getUint8(14) & 0x80)
+	if cap.lbpme != 0 {
+		cap.lbpme = 1
+	}
+	cap.lbprz = (scsiTask.getUint8(14) & 0x40)
+	if cap.lbprz != 0 {
+		cap.lbprz = 1
+	}
+	cap.lalba = scsiTask.getUint16(14) & 0x3fff
+	return cap, nil
+}
+
+type scsiTask struct {
+	task   C.struct_scsi_task
+	dataIn []byte
+}
+
+func (s scsiTask) init() scsiTask {
+	dataread := unsafe.Slice(s.task.datain.data, s.task.datain.size)
+	s.dataIn = []byte(string(dataread))
+	return s
+}
+
+func (s scsiTask) getUint32(offset int) C.uint {
+	if len(s.dataIn) == 0 {
+		panic("uninitialized scsiTask")
+	}
+	if offset <= int(s.task.datain.size-4) {
+		return C.uint(binary.BigEndian.Uint32(s.dataIn[offset : offset+4]))
+	}
+	return 0
+}
+
+func (s scsiTask) getUint16(offset int) C.uint16_t {
+	if len(s.dataIn) == 0 {
+		panic("uninitialized scsiTask")
+	}
+	if offset <= int(s.task.datain.size-2) {
+		return C.uint16_t(binary.BigEndian.Uint16(s.dataIn[offset : offset+2]))
+	}
+	return 0
+}
+
+func (s scsiTask) getUint8(offset int) C.uint8_t {
+	if len(s.dataIn) == 0 {
+		panic("uninitialized scsiTask")
+	}
+	if offset <= int(s.task.datain.size-1) {
+		return C.uint8_t(s.dataIn[offset])
+	}
+	return 0
 }
 
 // Don't want to expose C structs to callers and can't
@@ -299,4 +383,16 @@ func getDataIn(t *C.struct_scsi_task) []byte {
 	dataread := unsafe.Slice(t.datain.data, size)
 	// surely there's a better way to get from []C.uchar to []byte?
 	return []byte(string(dataread))
+}
+
+func printReadCapacity16(t *C.struct_scsi_readcapacity16) {
+	log.Printf("blocklength: %d\n", t.block_length)
+	log.Printf("lalba: %d\n", t.lalba)
+	log.Printf("lbpme: %d\n", t.lbpme)
+	log.Printf("lbppbe: %d\n", t.lbppbe)
+	log.Printf("lbprz: %d\n", t.lbprz)
+	log.Printf("piexp: %d\n", t.p_i_exp)
+	log.Printf("ptype: %d\n", t.p_type)
+	log.Printf("proten: %d\n", t.prot_en)
+	log.Printf("returnedlba: %d\n", t.returned_lba)
 }
