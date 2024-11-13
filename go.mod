@@ -25,4 +25,4 @@ require (
 	gotest.tools v2.2.0+incompatible // indirect
 )
 
-replace github.com/gostor/gotgt => /home/will/src/gotgt-1
+replace github.com/gostor/gotgt => /Users/will.gorman/git/gotgt

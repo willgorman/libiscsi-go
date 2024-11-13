@@ -1,8 +1,8 @@
 package iscsi_test
 
 import (
-	"crypto/rand"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -48,7 +48,7 @@ func createTargetTempfile(t *testing.T, size int64) string {
 	return file.Name()
 }
 
-func writeTargetTempfile(t *testing.T, size int64) string {
+func writeTargetTempfile(t *testing.T, rnd *rand.Rand, size int64) string {
 	fileName := createTargetTempfile(t, 0)
 	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 	if err != nil {
@@ -58,7 +58,8 @@ func writeTargetTempfile(t *testing.T, size int64) string {
 	// it'd be better have to a reader than can generate random data on the fly
 	// instead of allocating the whole thing
 	data := make([]byte, size)
-	if _, err := rand.Read(data); err != nil {
+
+	if _, err := rnd.Read(data); err != nil {
 		t.Fatal(err)
 	}
 
