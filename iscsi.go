@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/avast/retry-go/v4"
+	_ "github.com/ianlancetaylor/cgosymbolizer"
 	gopointer "github.com/mattn/go-pointer"
 	"golang.org/x/sys/unix"
 )
@@ -105,6 +106,11 @@ type Capacity struct {
 
 func (d device) ReadCapacity10() (c Capacity, err error) {
 	task := C.iscsi_readcapacity10_sync(d.Context, 0, 0, 0)
+	defer func() {
+		if task != nil {
+			C.scsi_free_scsi_task(task)
+		}
+	}()
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
 		return c, fmt.Errorf("iscsi_readcapacity10_sync: %s", C.GoString(errstr))
@@ -120,6 +126,11 @@ func (d device) ReadCapacity10() (c Capacity, err error) {
 
 func (d device) ReadCapacity16() (c Capacity, err error) {
 	task := C.iscsi_readcapacity16_sync(d.Context, 0)
+	defer func() {
+		if task != nil {
+			C.scsi_free_scsi_task(task)
+		}
+	}()
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
 		return c, fmt.Errorf("iscsi_readcapacity16_sync: %s", C.GoString(errstr))
@@ -144,6 +155,11 @@ func (d *device) Write16(data Write16) error {
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
 		C.uint64_t(data.LBA), &carr[0], C.uint(len(carr)), C.int(data.BlockSize), 0, 0, 0, 0, 0)
+	defer func() {
+		if task != nil {
+			C.scsi_free_scsi_task(task)
+		}
+	}()
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		// TODO: (willgorman) robust error checking of condition, sense key, etc
 		// from libiscsi
@@ -166,6 +182,11 @@ type Read16 struct {
 func (d *device) Read16(data Read16) ([]byte, error) {
 	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
+	defer func() {
+		if task != nil {
+			C.scsi_free_scsi_task(task)
+		}
+	}()
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		errstr := C.iscsi_get_error(d.Context)
 		if C.GoString(errstr) == "Poll failed" {

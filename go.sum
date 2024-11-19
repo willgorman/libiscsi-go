@@ -1,5 +1,3 @@
-github.com/augustoroman/hexdump v0.0.0-20231204223853-3694912baadb h1:ALfR3gpvX9qg+wKDPHnNdC37HQHUALgj2ABpnvj1hNw=
-github.com/augustoroman/hexdump v0.0.0-20231204223853-3694912baadb/go.mod h1:K8239CdeF8bhd+2T50O4FMgTbY5/0qCkuzrJBXRewO0=
 github.com/avast/retry-go/v4 v4.5.1 h1:AxIx0HGi4VZ3I02jr78j5lZ3M6x1E0Ivxa6b0pUUh7o=
 github.com/avast/retry-go/v4 v4.5.1/go.mod h1:/sipNsvNB3RRuT5iNcb6h73nw3IBmXJ/H3XrCQYSOpc=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
@@ -10,10 +8,10 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
-github.com/gostor/gotgt v0.2.2 h1:p/bFTaMY2bHPX9xPsFittz13VEyowAEXk5k71P084H8=
-github.com/gostor/gotgt v0.2.2/go.mod h1:S8S7yd+wIoOPSivPbIyF/kJ6qpsAmGa/31ZIcdczkTI=
 github.com/hashicorp/consul/sdk v0.16.1 h1:V8TxTnImoPD5cj0U9Spl0TUxcytjcbbJeADFF07KdHg=
 github.com/hashicorp/consul/sdk v0.16.1/go.mod h1:fSXvwxB2hmh1FMZCNl6PwX0Q/1wdWtHJcZ7Ea5tns0s=
+github.com/ianlancetaylor/cgosymbolizer v0.0.0-20241025222116-6b205f073fdd h1:ZQWb/5KPclX4ztaKJaC0Esm6qLmjKjl0C3cYsg9Qi0s=
+github.com/ianlancetaylor/cgosymbolizer v0.0.0-20241025222116-6b205f073fdd/go.mod h1:DvXTE/K/RtHehxU8/GtDs4vFtfw64jJ3PaCnFri8CRg=
 github.com/kr/pretty v0.3.0 h1:WgNl7dwNpEZ6jJ9k1snq4pZsg7DOEN8hP9Xw0Tsjwk0=
 github.com/kr/pretty v0.3.0/go.mod h1:640gp4NfQd8pI5XOwp5fnNeVWj67G7CFk/SaSQn7NBk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
