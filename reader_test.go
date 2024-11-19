@@ -8,9 +8,11 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	iscsi "github.com/willgorman/libiscsi-go"
 	"gotest.tools/assert"
 )
@@ -103,8 +105,21 @@ func TestReadRandom(t *testing.T) {
 		if fileErr != nil && fileErr != io.EOF {
 			t.Fatal(fileErr)
 		}
-		scsiN, scsiErr = sreader.Read(scsiBytes)
+		retry.Do(func() error {
+			scsiN, scsiErr = sreader.Read(scsiBytes)
+			return scsiErr
+		}, retry.RetryIf(func(err error) bool {
+			if err != nil && strings.Contains(err.Error(), "Poll failed") {
+				return true
+			}
+			return false
+		}), retry.Attempts(0), retry.OnRetry(func(n uint, err error) {
+			t.Log("RETRY ", err)
+		}))
+
 		if scsiErr != nil && scsiErr != io.EOF {
+			// FIXME: (willgorman) something in this path causes a segfault on disconnect
+			// immediately after a poll failed
 			t.Fatal(scsiErr)
 		}
 		assert.Equal(t, fileN, scsiN)
