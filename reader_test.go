@@ -61,11 +61,10 @@ func TestRead(t *testing.T) {
 	assert.Equal(t, fileChecksum, iscsiChecksum)
 }
 
-// TODO: (willgorman) in order to test non block aligned reads
+// in order to test non block aligned reads
 // we can have a file io.Reader and iscsi io.Reader and
 // read randomly sized []byte from them and assert that we always get
 // the same values from each
-
 func TestReadRandom(t *testing.T) {
 	seed := time.Now().UnixNano()
 	t.Logf("using seed %d", seed)
@@ -124,5 +123,62 @@ func TestReadRandom(t *testing.T) {
 		}
 		assert.Equal(t, fileN, scsiN)
 		assert.Assert(t, bytes.Equal(fileBytes, scsiBytes))
+	}
+}
+
+func TestReadLoop(t *testing.T) {
+	// seed := time.Now().UnixNano()
+	seed := int64(1732045254519287895)
+	t.Logf("using seed %d", seed)
+	rnd := rand.New(rand.NewSource(seed))
+	fileName := writeTargetTempfile(t, rnd, 10*MiB)
+	targetURL := runTestTarget(t, fileName)
+	for i := 0; i < 10000; i++ {
+		t.Log("LOOP ", i)
+		readAll(t, targetURL, rnd)
+	}
+}
+
+func readAll(t *testing.T, targetURL string, rnd *rand.Rand) {
+	device := iscsi.New(iscsi.ConnectionDetails{
+		InitiatorIQN: "iqn.2024-10.libiscsi:go",
+		TargetURL:    targetURL,
+	})
+
+	err := device.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = device.Disconnect()
+	}()
+
+	sreader, err := iscsi.Reader(device)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var scsiErr error
+	for scsiErr != io.EOF {
+		n := rnd.Intn(32 * KiB)
+		scsiBytes := make([]byte, n)
+		retry.Do(func() error {
+			_, scsiErr = sreader.Read(scsiBytes)
+			return scsiErr
+		}, retry.RetryIf(func(err error) bool {
+			if err != nil && strings.Contains(err.Error(), "Poll failed") {
+				return true
+			}
+			return false
+		}), retry.Attempts(0), retry.OnRetry(func(n uint, err error) {
+			t.Log("RETRY ", err)
+		}))
+
+		if scsiErr != nil && scsiErr != io.EOF {
+			// FIXME: (willgorman) something in this path causes a segfault on disconnect
+			// immediately after a poll failed
+			t.Fatal(scsiErr)
+		}
+
 	}
 }

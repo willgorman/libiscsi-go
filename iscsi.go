@@ -54,8 +54,12 @@ func (d *device) initializeContext() {
 		d.targetName = ""
 		d.targetPortal = ""
 	}
-	ctx := C.iscsi_create_context(C.CString(d.details.InitiatorIQN))
-	url := C.iscsi_parse_full_url(ctx, C.CString(d.details.TargetURL))
+	iqnStr := C.CString(d.details.InitiatorIQN)
+	defer C.free(unsafe.Pointer(iqnStr))
+	ctx := C.iscsi_create_context(iqnStr)
+	targetStr := C.CString(d.details.TargetURL)
+	defer C.free(unsafe.Pointer(targetStr))
+	url := C.iscsi_parse_full_url(ctx, targetStr)
 	_ = C.iscsi_set_targetname(ctx, &url.target[0])
 	defer C.iscsi_destroy_url(url)
 	d.Context = ctx
@@ -69,7 +73,9 @@ func (d *device) initializeContext() {
 func (d *device) Connect() error {
 	d.initializeContext()
 	return retry.Do(func() error {
-		if retval := C.iscsi_full_connect_sync(d.Context, C.CString(d.targetPortal), C.int(d.targetLun)); retval != 0 {
+		portalStr := C.CString(d.targetPortal)
+		defer C.free(unsafe.Pointer(portalStr))
+		if retval := C.iscsi_full_connect_sync(d.Context, portalStr, C.int(d.targetLun)); retval != 0 {
 			errstr := C.iscsi_get_error(d.Context)
 			// reset the context before retrying.  it seems like some connection
 			// errors leave the context in an inconsistent state that makes it
