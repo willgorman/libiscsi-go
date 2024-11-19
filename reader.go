@@ -47,7 +47,6 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	// TODO: (willgorman) handle EOF.  If endOffset is > total size
 	// need to make sure our block
 	if (endOffset/int(r.blocksize)) > int(r.lba) || blocks == int(r.lba-startBlock) {
-		// log.Println("HIT THE EOF!!!!!")
 		err = io.EOF
 		// endOffset = int(r.lba) * int(r.blocksize)
 		// log.Println("R.LBA! ", r.lba)
@@ -80,7 +79,11 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	if err == io.EOF {
 		result = readBytes[blockOffset:]
 	} else if blockOffset > 0 {
-		result = readBytes[blockOffset : l+int(blockOffset)]
+		// sometimes we get fewer than the number of requested blocks
+		// even when not near the max lba? (at least when testing with gotgt)
+		// unclear yet if this is acceptable for iscsi or a flaw in gotgt
+		// make sure not to overshoot length of readBytes in that case
+		result = readBytes[blockOffset:min(l+int(blockOffset), len(readBytes))]
 	} else {
 		result = readBytes[:l]
 	}

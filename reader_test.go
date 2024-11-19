@@ -133,13 +133,6 @@ func TestReadLoop(t *testing.T) {
 	rnd := rand.New(rand.NewSource(seed))
 	fileName := writeTargetTempfile(t, rnd, 10*MiB)
 	targetURL := runTestTarget(t, fileName)
-	for i := 0; i < 10000; i++ {
-		t.Log("LOOP ", i)
-		readAll(t, targetURL, rnd)
-	}
-}
-
-func readAll(t *testing.T, targetURL string, rnd *rand.Rand) {
 	device := iscsi.New(iscsi.ConnectionDetails{
 		InitiatorIQN: "iqn.2024-10.libiscsi:go",
 		TargetURL:    targetURL,
@@ -153,11 +146,17 @@ func readAll(t *testing.T, targetURL string, rnd *rand.Rand) {
 		_ = device.Disconnect()
 	}()
 
-	sreader, err := iscsi.Reader(device)
-	if err != nil {
-		t.Fatal(err)
+	for i := 0; i < 1000; i++ {
+		t.Log("LOOP ", i)
+		sreader, err := iscsi.Reader(device)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readAll(t, sreader, rnd)
 	}
+}
 
+func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 	var scsiErr error
 	for scsiErr != io.EOF {
 		n := rnd.Intn(32 * KiB)

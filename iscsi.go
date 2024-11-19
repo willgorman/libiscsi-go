@@ -201,10 +201,7 @@ func (d *device) Read16(data Read16) ([]byte, error) {
 		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(errstr))
 	}
 
-	size := task.datain.size
-	dataread := unsafe.Slice(task.datain.data, size)
-	// surely there's a better way to get from []C.uchar to []byte?
-	return []byte(string(dataread)), nil
+	return C.GoBytes(unsafe.Pointer(task.datain.data), task.datain.size), nil
 }
 
 func (d *device) Read16Async(data Read16, tasks chan TaskResult) error {
