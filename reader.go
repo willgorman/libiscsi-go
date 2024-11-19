@@ -14,7 +14,7 @@ type reader struct {
 }
 
 func Reader(dev *device) (*reader, error) {
-	c, err := dev.ReadCapacity10()
+	c, err := dev.ReadCapacity16()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capacity of device: %w", err)
 	}
