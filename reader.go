@@ -3,7 +3,7 @@ package iscsi
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 )
 
 type reader struct {
@@ -32,25 +32,21 @@ func (r *reader) Close() error {
 
 func (r *reader) Read(p []byte) (n int, err error) {
 	if r.offset >= r.blocksize*r.lba {
-		log.Printf("EOF at %d", r.blocksize*r.lba)
+		logger().Debug("reader already at EOF", slog.Int("offset", int(r.offset)))
 		return 0, io.EOF
 	}
-	// log.Printf("READ %d bytes from offset %d\n", len(p), r.offset)
+	logger().Debug("Read", slog.Int("bytes", len(p)), slog.Int("offset", int(r.offset)))
+
 	// find our starting lba
 	startBlock := r.offset / r.blocksize
 	endOffset := len(p) + int(r.offset)
-
 	blocks := (endOffset-int(r.offset))/int(r.blocksize) + 1
-
 	blocks = min(blocks, int(r.lba)-int(startBlock))
 
-	// TODO: (willgorman) handle EOF.  If endOffset is > total size
-	// need to make sure our block
+	// handle EOF
 	if (endOffset/int(r.blocksize)) > int(r.lba) || blocks == int(r.lba-startBlock) {
 		err = io.EOF
-		// endOffset = int(r.lba) * int(r.blocksize)
-		// log.Println("R.LBA! ", r.lba)
-		// log.Println("END OFFSET! ", endOffset)
+		logger().Debug("reached EOF", slog.Int("lba", int(r.lba)), slog.Int("endOffset", endOffset))
 		blocks = int(r.lba - startBlock)
 	} else if endOffset%int(r.blocksize) != 0 {
 		// if endoffset is not block aligned then we need to read one more block
@@ -58,21 +54,17 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	}
 
 	blocks = min(blocks, int(r.lba)-int(startBlock))
-
-	read16 := Read16{
+	readBytes, readErr := r.dev.Read16(Read16{
 		LBA:       int(startBlock),
 		BlockSize: int(r.blocksize),
 		Blocks:    blocks,
-	}
-	// log.Printf("%#v", read16)
-	readBytes, readErr := r.dev.Read16(read16)
+	})
 	if readErr != nil {
 		return 0, fmt.Errorf("iscsi device read error: %w", readErr)
 	}
 
 	blockOffset := r.offset % r.blocksize
-	// log.Printf("OFFSET %d INTO BLOCK %d\n", blockOffset, startBlock)
-	// log.Printf("OFFSET + LEN(P): %d | LEN(readBytes)-OFFSET: %d", int(blockOffset)+len(p), len(readBytes)-int(blockOffset))
+	logger().Debug(fmt.Sprintf("offset %d into block %d", blockOffset, startBlock))
 
 	var result []byte
 	l := min(len(p), len(readBytes))
@@ -88,7 +80,7 @@ func (r *reader) Read(p []byte) (n int, err error) {
 		result = readBytes[:l]
 	}
 
-	// log.Printf("LEN N WILL BE: %d", len(result))
+	logger().Debug("finished read", slog.Int("length", len(result)))
 	r.offset = int64(endOffset)
 
 	return copy(p, result), err

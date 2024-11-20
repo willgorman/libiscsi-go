@@ -13,7 +13,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -22,6 +25,22 @@ import (
 	gopointer "github.com/mattn/go-pointer"
 	"golang.org/x/sys/unix"
 )
+
+var defaultLogger = atomic.Pointer[slog.Logger]{}
+
+func init() {
+	defaultLogger.Store(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+		Level: slog.LevelError,
+	})))
+}
+
+func SetLogger(l *slog.Logger) {
+	defaultLogger.Store(l)
+}
+
+func logger() *slog.Logger {
+	return defaultLogger.Load()
+}
 
 type (
 	iscsiContext *C.struct_iscsi_context
@@ -127,6 +146,7 @@ func (d device) ReadCapacity10() (c Capacity, err error) {
 	}
 	c.BlockSize = int(readcapacity.block_size)
 	c.LBA = int(readcapacity.lba)
+	logger().Debug("ReadCapacity10", slog.Any("capacity", c))
 	return c, nil
 }
 
@@ -147,6 +167,7 @@ func (d device) ReadCapacity16() (c Capacity, err error) {
 	}
 	c.BlockSize = int(readcapacity.block_length)
 	c.LBA = int(readcapacity.returned_lba)
+	logger().Debug("ReadCapacity16", slog.Any("capacity", c))
 	return c, nil
 }
 
@@ -157,6 +178,7 @@ type Write16 struct {
 }
 
 func (d *device) Write16(data Write16) error {
+	logger().Debug("Write16", slog.Any("request", data))
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
 	task := C.iscsi_write16_sync(d.Context, 0,
@@ -176,6 +198,7 @@ func (d *device) Write16(data Write16) error {
 		errstr := C.iscsi_get_error(d.Context)
 		return fmt.Errorf("iscsi_write16_sync: %s", C.GoString(errstr))
 	}
+	logger().Debug("Write16 done", slog.Any("request", data))
 	return nil
 }
 
@@ -186,6 +209,7 @@ type Read16 struct {
 }
 
 func (d *device) Read16(data Read16) ([]byte, error) {
+	logger().Debug("Read16", slog.Any("request", data))
 	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
 		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
 	defer func() {
@@ -200,7 +224,7 @@ func (d *device) Read16(data Read16) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(errstr))
 	}
-
+	logger().Debug("Read16 done", slog.Any("length", task.datain.size))
 	return C.GoBytes(unsafe.Pointer(task.datain.data), task.datain.size), nil
 }
 
