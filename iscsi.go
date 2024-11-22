@@ -420,17 +420,10 @@ func iscsiChannelCB(iscsiCtx iscsiContext, status int, command_data, private_dat
 		// TODO: (willgorman) should we copy data out of the task and free it here?
 		Task: Task{
 			Status: int(task.status),
-			DataIn: getDataIn(task),
+			DataIn: C.GoBytes(unsafe.Pointer(task.datain.data), task.datain.size),
 		},
 		Context: data.context,
 	}
-}
-
-func getDataIn(t *C.struct_scsi_task) []byte {
-	size := t.datain.size
-	dataread := unsafe.Slice(t.datain.data, size)
-	// surely there's a better way to get from []C.uchar to []byte?
-	return []byte(string(dataread))
 }
 
 func printReadCapacity16(t *C.struct_scsi_readcapacity16) {
