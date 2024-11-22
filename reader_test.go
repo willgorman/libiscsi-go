@@ -181,3 +181,58 @@ func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 
 	}
 }
+
+func TestReadRange(t *testing.T) {
+	seed := time.Now().UnixNano()
+	t.Logf("using seed %d", seed)
+	rnd := rand.New(rand.NewSource(seed))
+	fileName := writeTargetTempfile(t, rnd, 4*KiB)
+	file, err := os.Open(fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	device := iscsi.New(iscsi.ConnectionDetails{
+		InitiatorIQN: "iqn.2024-10.libiscsi:go",
+		TargetURL:    runTestTarget(t, fileName),
+	})
+
+	err = device.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = device.Disconnect()
+	}()
+
+	cap, err := device.ReadCapacity16()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 2*cap.BlockSize)
+	_, err = file.ReadAt(data, int64(2*cap.BlockSize))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, bytes.NewBuffer(data)); err != nil {
+		log.Fatal(err)
+	}
+	rangeChecksum := fmt.Sprintf("%x", hash.Sum(nil))
+	t.Log("RANGE CHECKSUM", rangeChecksum)
+
+	sreader, err := iscsi.RangeReader(device, 2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Printf("%#v", sreader)
+	hash = sha256.New()
+	if _, err := io.Copy(hash, sreader); err != nil {
+		log.Fatal(err)
+	}
+	iscsiChecksum := fmt.Sprintf("%x", hash.Sum(nil))
+	t.Log("ISCSI CHECKSUM ", iscsiChecksum)
+	assert.Equal(t, rangeChecksum, iscsiChecksum)
+}
