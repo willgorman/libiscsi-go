@@ -7,13 +7,21 @@ import (
 )
 
 type reader struct {
-	dev       *device
+	dev       readDevice
 	lba       int64
 	offset    int64
 	blocksize int64
 }
 
-func Reader(dev *device) (*reader, error) {
+// internal interface to abstract the iscsi connection for tests
+type readDevice interface {
+	ReadCapacity16() (c Capacity, err error)
+	Read16(data Read16) ([]byte, error)
+	Connect() error
+	Disconnect() error
+}
+
+func Reader(dev readDevice) (*reader, error) {
 	c, err := dev.ReadCapacity16()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capacity of device: %w", err)

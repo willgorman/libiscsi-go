@@ -17,6 +17,26 @@ import (
 	"gotest.tools/assert"
 )
 
+type testReadDevice struct {
+	f *os.File
+}
+
+func (t *testReadDevice) ReadCapacity16() (c iscsi.Capacity, err error) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (t *testReadDevice) Read16(data iscsi.Read16) ([]byte, error) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (t *testReadDevice) Connect() error {
+	return nil
+}
+
+func (t *testReadDevice) Disconnect() error {
+	return nil
+}
+
 func TestRead(t *testing.T) {
 	seed := time.Now().UnixNano()
 	t.Logf("using seed %d", seed)
