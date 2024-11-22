@@ -326,6 +326,14 @@ func (d *device) HandleEvents(n int16) int {
 	return int(C.iscsi_service(d.Context, C.int(n)))
 }
 
+func (d *device) GetQueueLength() int {
+	return int(C.iscsi_queue_length(d.Context))
+}
+
+func (d *device) GetOutQueueLength() int {
+	return int(C.iscsi_out_queue_length(d.Context))
+}
+
 func getReadCapacity10(task C.struct_scsi_task) (C.struct_scsi_readcapacity10, error) {
 	cap := C.struct_scsi_readcapacity10{}
 
