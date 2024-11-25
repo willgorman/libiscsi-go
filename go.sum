@@ -8,6 +8,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/gostor/gotgt v0.2.2 h1:p/bFTaMY2bHPX9xPsFittz13VEyowAEXk5k71P084H8=
+github.com/gostor/gotgt v0.2.2/go.mod h1:S8S7yd+wIoOPSivPbIyF/kJ6qpsAmGa/31ZIcdczkTI=
 github.com/hashicorp/consul/sdk v0.16.1 h1:V8TxTnImoPD5cj0U9Spl0TUxcytjcbbJeADFF07KdHg=
 github.com/hashicorp/consul/sdk v0.16.1/go.mod h1:fSXvwxB2hmh1FMZCNl6PwX0Q/1wdWtHJcZ7Ea5tns0s=
 github.com/ianlancetaylor/cgosymbolizer v0.0.0-20241025222116-6b205f073fdd h1:ZQWb/5KPclX4ztaKJaC0Esm6qLmjKjl0C3cYsg9Qi0s=

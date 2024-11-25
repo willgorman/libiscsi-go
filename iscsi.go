@@ -59,6 +59,9 @@ type ConnectionDetails struct {
 	TargetURL    string
 }
 
+// Creates a new ISCSI device with the given connection details
+// Note that an ISCSI device is not safe to use from multiple
+// goroutines
 func New(details ConnectionDetails) *device {
 	return &device{
 		details: details,
