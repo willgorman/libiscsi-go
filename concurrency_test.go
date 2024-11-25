@@ -154,12 +154,15 @@ func TestParallelSyncConsumers(t *testing.T) {
 				t.Fail()
 				t.Log(err)
 			}
-			t.Logf("Starting at %d, reading to %d", so, so+(cap.LBA/nreaders))
-			rdr, err := iscsi.RangeReader(device, so, so+(cap.LBA/nreaders))
+			reader, err := iscsi.Reader(device)
 			if err != nil {
 				t.Fail()
 				t.Log(err)
 			}
+			start := so * blockSize
+			readLen := (cap.LBA * blockSize) / nreaders
+			rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
+			t.Logf("Starting at %d, reading to %d", start, readLen)
 
 			wtr := delayWriter{io.Discard, consumerDelay}
 			buf := make([]byte, MiB)
@@ -349,13 +352,16 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 					b.Fail()
 					b.Log(err)
 				}
-				b.Logf("Starting at %d, reading to %d", so, so+(cap.LBA/nreaders))
-				rdr, err := iscsi.RangeReader(device, so, so+(cap.LBA/nreaders))
+
+				reader, err := iscsi.Reader(device)
 				if err != nil {
 					b.Fail()
 					b.Log(err)
 				}
-
+				start := so * blockSize
+				readLen := (cap.LBA * blockSize) / nreaders
+				rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
+				b.Logf("Starting at %d, reading to %d", start, readLen)
 				wtr := delayWriter{io.Discard, consumerDelay}
 				buf := make([]byte, MiB)
 				for j := 0; j < deviceSize/len(buf); j++ {

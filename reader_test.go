@@ -182,7 +182,7 @@ func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 	}
 }
 
-func TestReadRange(t *testing.T) {
+func TestSectionRead(t *testing.T) {
 	seed := time.Now().UnixNano()
 	t.Logf("using seed %d", seed)
 	rnd := rand.New(rand.NewSource(seed))
@@ -220,13 +220,15 @@ func TestReadRange(t *testing.T) {
 	if _, err := io.Copy(hash, bytes.NewBuffer(data)); err != nil {
 		log.Fatal(err)
 	}
-	rangeChecksum := fmt.Sprintf("%x", hash.Sum(nil))
-	t.Log("RANGE CHECKSUM", rangeChecksum)
+	sectionChecksum := fmt.Sprintf("%x", hash.Sum(nil))
+	t.Log("SECTION CHECKSUM", sectionChecksum)
 
-	sreader, err := iscsi.RangeReader(device, 2, 4)
+	reader, err := iscsi.Reader(device)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	sreader := io.NewSectionReader(reader, int64(2*cap.BlockSize), int64(2*cap.BlockSize))
 	log.Printf("%#v", sreader)
 	hash = sha256.New()
 	if _, err := io.Copy(hash, sreader); err != nil {
@@ -234,5 +236,5 @@ func TestReadRange(t *testing.T) {
 	}
 	iscsiChecksum := fmt.Sprintf("%x", hash.Sum(nil))
 	t.Log("ISCSI CHECKSUM ", iscsiChecksum)
-	assert.Equal(t, rangeChecksum, iscsiChecksum)
+	assert.Equal(t, sectionChecksum, iscsiChecksum)
 }

@@ -1,7 +1,6 @@
 package iscsi
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -32,16 +31,22 @@ func (r *reader) Close() error {
 }
 
 func (r *reader) Read(p []byte) (n int, err error) {
-	if r.offset >= r.blocksize*r.lba {
-		logger().Debug("reader already at EOF", slog.Int("offset", int(r.offset)))
+	logger().Debug("ReadAt", slog.Int("bytes", len(p)), slog.Int("offset", int(r.offset)))
+	readLen, err := r.ReadAt(p, r.offset)
+	r.offset += int64(readLen)
+	return readLen, err
+}
+
+func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
+	if off >= r.blocksize*r.lba {
+		logger().Debug("offset past at EOF", slog.Int("offset", int(off)))
 		return 0, io.EOF
 	}
-	logger().Debug("Read", slog.Int("bytes", len(p)), slog.Int("offset", int(r.offset)))
-
+	logger().Debug("ReadAt", slog.Int("bytes", len(p)), slog.Int("offset", int(off)))
 	// find our starting lba
-	startBlock := r.offset / r.blocksize
-	endOffset := len(p) + int(r.offset)
-	blocks := (endOffset-int(r.offset))/int(r.blocksize) + 1
+	startBlock := off / r.blocksize
+	endOffset := len(p) + int(off)
+	blocks := (endOffset-int(off))/int(r.blocksize) + 1
 	blocks = min(blocks, int(r.lba)-int(startBlock))
 
 	// handle EOF
@@ -64,7 +69,7 @@ func (r *reader) Read(p []byte) (n int, err error) {
 		return 0, fmt.Errorf("iscsi device read error: %w", readErr)
 	}
 
-	blockOffset := r.offset % r.blocksize
+	blockOffset := off % r.blocksize
 	logger().Debug(fmt.Sprintf("offset %d into block %d", blockOffset, startBlock))
 
 	var result []byte
@@ -82,42 +87,5 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	}
 
 	logger().Debug("finished read", slog.Int("length", len(result)))
-	r.offset = int64(endOffset)
-
 	return copy(p, result), err
-}
-
-func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
-	return 0, nil
-}
-
-type rangeReader struct {
-	*reader
-	startBlock int
-	endBlock   int
-}
-
-// RangeReader provides an io.Reader that covers a range of blocks within the device
-func RangeReader(dev *device, startBlock, endBlock int) (*rangeReader, error) {
-	if endBlock <= startBlock {
-		return nil, errors.New("endBlock must be > startBlock")
-	}
-	r, err := Reader(dev)
-	if err != nil {
-		return nil, err
-	}
-	r.offset = int64(startBlock) * r.blocksize
-	if endBlock > int(r.lba) {
-		return nil, errors.New("endBlock is beyond the size of the device")
-	}
-	r.lba = int64(endBlock)
-	return &rangeReader{reader: r, startBlock: startBlock, endBlock: endBlock}, nil
-}
-
-func (r *rangeReader) StartBlock() int {
-	return r.startBlock
-}
-
-func (r *rangeReader) EndBlock() int {
-	return r.endBlock
 }
