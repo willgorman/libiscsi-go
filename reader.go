@@ -1,6 +1,7 @@
 package iscsi
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -88,4 +89,24 @@ func (r *reader) ReadAt(p []byte, off int64) (n int, err error) {
 
 	logger().Debug("finished read", slog.Int("length", len(result)))
 	return copy(p, result), err
+}
+
+// TODO: (willgorman) tests
+func (r *reader) Seek(offset int64, whence int) (int64, error) {
+	var abs int64
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = r.offset + offset
+	case io.SeekEnd:
+		abs = r.lba*r.blocksize + offset
+	default:
+		return 0, errors.New("iscsi.Reader.Seek: invalid whence")
+	}
+	if abs < 0 {
+		return 0, errors.New("iscsi.Reader.Seek: negative position")
+	}
+	r.offset = abs
+	return abs, nil
 }
