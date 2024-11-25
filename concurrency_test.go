@@ -223,21 +223,20 @@ func BenchmarkSingleAsyncReaderWithParallelConsumers(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer file.Close()
+	device := iscsi.New(iscsi.ConnectionDetails{
+		InitiatorIQN: "iqn.2024-10.libiscsi:go",
+		TargetURL:    runTestTarget(b, fileName),
+	})
+
+	err = device.Connect()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() {
+		_ = device.Disconnect()
+	}()
+
 	for i := 0; i < b.N; i++ {
-
-		device := iscsi.New(iscsi.ConnectionDetails{
-			InitiatorIQN: "iqn.2024-10.libiscsi:go",
-			TargetURL:    runTestTarget(b, fileName),
-		})
-
-		err = device.Connect()
-		if err != nil {
-			b.Fatal(err)
-		}
-		defer func() {
-			_ = device.Disconnect()
-		}()
-
 		output := make(chan iscsi.TaskResult, 20)
 		totalBlocks := deviceSize / 512
 		// read 1MiB at a time
@@ -327,41 +326,45 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 
 	blocks := deviceSize / blockSize
 
+	var sectionReaders []io.Reader
+	for i := 0; i < blocks; i = i + (blocks / nreaders) {
+		device := iscsi.New(iscsi.ConnectionDetails{
+			InitiatorIQN: "iqn.2024-10.libiscsi:go",
+			TargetURL:    url,
+		})
+
+		err = device.Connect()
+		if err != nil {
+			b.Fail()
+			b.Log(err)
+		}
+		defer func() {
+			_ = device.Disconnect()
+		}()
+
+		cap, err := device.ReadCapacity16()
+		if err != nil {
+			b.Fail()
+			b.Log(err)
+		}
+
+		reader, err := iscsi.Reader(device)
+		if err != nil {
+			b.Fail()
+			b.Log(err)
+		}
+		start := i * blockSize
+		readLen := (cap.LBA * blockSize) / nreaders
+		rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
+		b.Logf("Created section reader starting at %d, reading %d bytes", start, readLen)
+		sectionReaders = append(sectionReaders, rdr)
+	}
 	for i := 0; i < b.N; i++ {
 
 		w := sync.WaitGroup{}
-		w.Add(nreaders)
-		for i := 0; i < blocks; i = i + (blocks / nreaders) {
-			go func(so int) {
-				device := iscsi.New(iscsi.ConnectionDetails{
-					InitiatorIQN: "iqn.2024-10.libiscsi:go",
-					TargetURL:    url,
-				})
-
-				err = device.Connect()
-				if err != nil {
-					b.Fail()
-					b.Log(err)
-				}
-				defer func() {
-					_ = device.Disconnect()
-				}()
-
-				cap, err := device.ReadCapacity16()
-				if err != nil {
-					b.Fail()
-					b.Log(err)
-				}
-
-				reader, err := iscsi.Reader(device)
-				if err != nil {
-					b.Fail()
-					b.Log(err)
-				}
-				start := so * blockSize
-				readLen := (cap.LBA * blockSize) / nreaders
-				rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
-				b.Logf("Starting at %d, reading to %d", start, readLen)
+		w.Add(len(sectionReaders))
+		for _, rdr := range sectionReaders {
+			go func() {
 				wtr := delayWriter{io.Discard, consumerDelay}
 				buf := make([]byte, MiB)
 				for j := 0; j < deviceSize/len(buf); j++ {
@@ -380,8 +383,59 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 					}
 				}
 				w.Done()
-			}(i)
+			}()
 		}
+		// for i := 0; i < blocks; i = i + (blocks / nreaders) {
+		// 	go func(so int) {
+		// 		device := iscsi.New(iscsi.ConnectionDetails{
+		// 			InitiatorIQN: "iqn.2024-10.libiscsi:go",
+		// 			TargetURL:    url,
+		// 		})
+
+		// 		err = device.Connect()
+		// 		if err != nil {
+		// 			b.Fail()
+		// 			b.Log(err)
+		// 		}
+		// 		defer func() {
+		// 			_ = device.Disconnect()
+		// 		}()
+
+		// 		cap, err := device.ReadCapacity16()
+		// 		if err != nil {
+		// 			b.Fail()
+		// 			b.Log(err)
+		// 		}
+
+		// 		reader, err := iscsi.Reader(device)
+		// 		if err != nil {
+		// 			b.Fail()
+		// 			b.Log(err)
+		// 		}
+		// 		start := so * blockSize
+		// 		readLen := (cap.LBA * blockSize) / nreaders
+		// 		rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
+		// 		b.Logf("Starting at %d, reading to %d", start, readLen)
+		// 		wtr := delayWriter{io.Discard, consumerDelay}
+		// 		buf := make([]byte, MiB)
+		// 		for j := 0; j < deviceSize/len(buf); j++ {
+		// 			_, err := rdr.Read(buf)
+		// 			if err != nil && err != io.EOF {
+		// 				b.Fail()
+		// 				b.Log("read err ", err)
+		// 			}
+		// 			if err == io.EOF {
+		// 				break
+		// 			}
+		// 			_, err = wtr.Write(buf)
+		// 			if err != nil {
+		// 				b.Fail()
+		// 				b.Log("write err ", err)
+		// 			}
+		// 		}
+		// 		w.Done()
+		// 	}(i)
+		// }
 		w.Wait()
 	}
 }
