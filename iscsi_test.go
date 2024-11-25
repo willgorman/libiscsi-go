@@ -31,7 +31,7 @@ func init() {
 	deviceID.Add(1000)
 }
 
-func createTargetTempfile(t *testing.T, size int64) string {
+func createTargetTempfile(t testing.TB, size int64) string {
 	file, err := os.CreateTemp("", strings.ReplaceAll(t.Name(), "/", "_"))
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func createTargetTempfile(t *testing.T, size int64) string {
 	return file.Name()
 }
 
-func writeTargetTempfile(t *testing.T, rnd *rand.Rand, size int64) string {
+func writeTargetTempfile(t testing.TB, rnd *rand.Rand, size int64) string {
 	fileName := createTargetTempfile(t, 0)
 	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 	if err != nil {
@@ -73,12 +73,12 @@ func writeTargetTempfile(t *testing.T, rnd *rand.Rand, size int64) string {
 // createAndRunTestTarget creates a sparse file backed iscsi target of the given
 // size and runs an iscsi server on a random ephmeral port.  The url
 // returned can be used by iscsi.ConnectionDetails
-func createAndRunTestTarget(t *testing.T, size int64) (url string) {
+func createAndRunTestTarget(t testing.TB, size int64) (url string) {
 	imgFile := createTargetTempfile(t, size)
 	return runTestTarget(t, imgFile)
 }
 
-func runTestTarget(t *testing.T, targetFile string) (url string) {
+func runTestTarget(t testing.TB, targetFile string) (url string) {
 	port := freeport.GetOne(t)
 	targetIQN := "iqn.2024-10.com.example:0:0"
 	c := &config.Config{
