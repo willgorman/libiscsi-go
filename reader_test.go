@@ -117,8 +117,6 @@ func TestReadRandom(t *testing.T) {
 		}))
 
 		if scsiErr != nil && scsiErr != io.EOF {
-			// FIXME: (willgorman) something in this path causes a segfault on disconnect
-			// immediately after a poll failed
 			t.Fatal(scsiErr)
 		}
 		assert.Equal(t, fileN, scsiN)
@@ -174,8 +172,9 @@ func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 		}))
 
 		if scsiErr != nil && scsiErr != io.EOF {
-			// FIXME: (willgorman) something in this path causes a segfault on disconnect
-			// immediately after a poll failed
+			// something in this path causes a segfault on disconnect
+			// immediately after a poll failed, but it seems like it might
+			// be an issue in libiscsi (happens with 1.19, can't reproduce on 1.20)
 			t.Fatal(scsiErr)
 		}
 

@@ -197,7 +197,6 @@ func (d *delayWriter) Write(p []byte) (n int, err error) {
 	return d.Writer.Write(p)
 }
 
-// TODO: move iscsi session creation out of benchmark loop
 func BenchmarkSingleAsyncReaderWithParallelConsumers(b *testing.B) {
 	// parameters
 	// size of the iscsi lun
