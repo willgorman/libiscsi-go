@@ -180,7 +180,7 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 			b.Log(err)
 		}
 		start := i * blockSize
-		readLen := (cap.LBA * blockSize) / nreaders
+		readLen := ((cap.LBA + 1) * blockSize) / nreaders
 		rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
 		b.Logf("Created section reader starting at %d, reading %d bytes", start, readLen)
 		sectionReaders = append(sectionReaders, rdr)
@@ -193,7 +193,7 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 			go func() {
 				wtr := delayWriter{io.Discard, consumerDelay}
 				buf := make([]byte, MiB)
-				for j := 0; j < deviceSize/len(buf); j++ {
+				for j := 0; j < deviceSize/len(sectionReaders)/len(buf); j++ {
 					_, err := rdr.Read(buf)
 					if err != nil && err != io.EOF {
 						b.Fail()
