@@ -3,12 +3,12 @@ package iscsi_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +108,7 @@ func TestReadRandom(t *testing.T) {
 			scsiN, scsiErr = sreader.Read(scsiBytes)
 			return scsiErr
 		}, retry.RetryIf(func(err error) bool {
-			if err != nil && strings.Contains(err.Error(), "Poll failed") {
+			if err != nil && errors.Is(err, iscsi.ErrPollFailed) {
 				return true
 			}
 			return false
@@ -163,7 +163,7 @@ func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 			_, scsiErr = sreader.Read(scsiBytes)
 			return scsiErr
 		}, retry.RetryIf(func(err error) bool {
-			if err != nil && strings.Contains(err.Error(), "Poll failed") {
+			if err != nil && errors.Is(err, iscsi.ErrPollFailed) {
 				return true
 			}
 			return false
