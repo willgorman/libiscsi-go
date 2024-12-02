@@ -45,7 +45,7 @@ func main() {
 	// TODO: (willgorman) what's max throughput here?  can we split up and run chunks in parallel?
 	log.Println(percentage)
 	log.Println(float64(percentage) / 100.0)
-	blocksToWrite := int(float64(float64(capacity.LBA)) * float64(percentage) / 100.0)
+	blocksToWrite := int(float64(float64(capacity.MaxLBA)) * float64(percentage) / 100.0)
 	log.Println(blocksToWrite)
 	currentBlock := 0
 	for currentBlock < blocksToWrite {

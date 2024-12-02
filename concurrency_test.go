@@ -180,7 +180,7 @@ func BenchmarkParallelSyncReaders(b *testing.B) {
 			b.Log(err)
 		}
 		start := i * blockSize
-		readLen := ((cap.LBA + 1) * blockSize) / nreaders
+		readLen := ((cap.MaxLBA + 1) * blockSize) / nreaders
 		rdr := io.NewSectionReader(reader, int64(start), int64(readLen))
 		b.Logf("Created section reader starting at %d, reading %d bytes", start, readLen)
 		sectionReaders = append(sectionReaders, rdr)

@@ -130,7 +130,8 @@ func (d *device) Disconnect() error {
 }
 
 type Capacity struct {
-	LBA       int
+	// the maximum addressable block in the device
+	MaxLBA    int
 	BlockSize int
 }
 
@@ -150,7 +151,7 @@ func (d device) ReadCapacity10() (c Capacity, err error) {
 		return c, err
 	}
 	c.BlockSize = int(readcapacity.block_size)
-	c.LBA = int(readcapacity.lba)
+	c.MaxLBA = int(readcapacity.lba)
 	logger().Debug("ReadCapacity10", slog.Any("capacity", c))
 	return c, nil
 }
@@ -171,7 +172,7 @@ func (d device) ReadCapacity16() (c Capacity, err error) {
 		return c, err
 	}
 	c.BlockSize = int(readcapacity.block_length)
-	c.LBA = int(readcapacity.returned_lba)
+	c.MaxLBA = int(readcapacity.returned_lba)
 	logger().Debug("ReadCapacity16", slog.Any("capacity", c))
 	return c, nil
 }

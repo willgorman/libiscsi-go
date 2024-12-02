@@ -166,7 +166,7 @@ func TestReadCapacity16(t *testing.T) {
 			desc: "1 MiB",
 			size: 1 * MiB,
 			expected: iscsi.Capacity{
-				LBA:       (1 * MiB / 512) - 1,
+				MaxLBA:    (1 * MiB / 512) - 1,
 				BlockSize: 512,
 			},
 		},
@@ -174,7 +174,7 @@ func TestReadCapacity16(t *testing.T) {
 			desc: "3 TiB",
 			size: 3 * TiB,
 			expected: iscsi.Capacity{
-				LBA:       (3 * TiB / 512) - 1,
+				MaxLBA:    (3 * TiB / 512) - 1,
 				BlockSize: 512,
 			},
 		},
@@ -212,7 +212,7 @@ func TestReadCapacity10(t *testing.T) {
 			desc: "1 MiB",
 			size: 1 * MiB,
 			expected: iscsi.Capacity{
-				LBA:       (1 * MiB / 512) - 1,
+				MaxLBA:    (1 * MiB / 512) - 1,
 				BlockSize: 512,
 			},
 		},
@@ -220,7 +220,7 @@ func TestReadCapacity10(t *testing.T) {
 			desc: "3 TiB",
 			size: 3 * TiB,
 			expected: iscsi.Capacity{
-				LBA:       (2 * TiB / 512) - 1,
+				MaxLBA:    (2 * TiB / 512) - 1,
 				BlockSize: 512,
 			},
 		},

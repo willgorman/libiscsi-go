@@ -21,7 +21,7 @@ func Reader(dev *device) (*reader, error) {
 	}
 	return &reader{
 		dev:       dev,
-		lba:       int64(c.LBA) + 1,
+		lba:       int64(c.MaxLBA) + 1,
 		offset:    0,
 		blocksize: int64(c.BlockSize),
 	}, nil
