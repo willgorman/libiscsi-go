@@ -279,13 +279,13 @@ func (d *device) ProcessAsync(ctx context.Context) error {
 			_, err := unix.Poll(fds, 1000)
 			if err != nil {
 				if err.Error() != "interrupted system call" {
-					log.Fatal("oh no", err)
+					return fmt.Errorf("Poll error: %w", err)
 				}
 			}
 			// I think we have to call this with fds[0], not fd.
 			// fds[0] is what actually gets updated, fd is just a copy
 			if d.HandleEvents(fds[0].Revents) < 0 {
-				log.Fatal("welp idk")
+				return errors.New("failed to handle events")
 			}
 		}
 	}
@@ -308,13 +308,13 @@ func (d *device) ProcessAsyncN(n int) error {
 		_, err := unix.Poll(fds, 1000)
 		if err != nil {
 			if err.Error() != "interrupted system call" {
-				log.Fatal("oh no", err)
+				return fmt.Errorf("Poll error: %w", err)
 			}
 		}
 		// I think we have to call this with fds[0], not fd.
 		// fds[0] is what actually gets updated, fd is just a copy
 		if d.HandleEvents(fds[0].Revents) < 0 {
-			log.Fatal("welp idk")
+			return errors.New("failed to handle events")
 		}
 	}
 	return nil
