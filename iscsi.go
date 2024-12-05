@@ -27,8 +27,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var ErrPollFailed = errors.New("Poll failed")
-
 var defaultLogger = atomic.Pointer[slog.Logger]{}
 
 func init() {
@@ -250,11 +248,7 @@ func (d *device) Read16(data Read16) ([]byte, error) {
 	}
 
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
-		errstr := C.iscsi_get_error(d.Context)
-		if C.GoString(errstr) == "Poll failed" {
-			return nil, ErrPollFailed
-		}
-		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(errstr))
+		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(C.iscsi_get_error(d.Context)))
 	}
 	logger().Debug("Read16 done", slog.Any("length", task.datain.size))
 	return C.GoBytes(unsafe.Pointer(task.datain.data), task.datain.size), nil
