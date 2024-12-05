@@ -3,7 +3,6 @@ package iscsi_test
 import (
 	"bytes"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/avast/retry-go/v4"
 	iscsi "github.com/willgorman/libiscsi-go"
 	"gotest.tools/assert"
 )
@@ -104,17 +102,8 @@ func TestReadRandom(t *testing.T) {
 		if fileErr != nil && fileErr != io.EOF {
 			t.Fatal(fileErr)
 		}
-		retry.Do(func() error {
-			scsiN, scsiErr = sreader.Read(scsiBytes)
-			return scsiErr
-		}, retry.RetryIf(func(err error) bool {
-			if err != nil && errors.Is(err, iscsi.ErrPollFailed) {
-				return true
-			}
-			return false
-		}), retry.Attempts(0), retry.OnRetry(func(n uint, err error) {
-			t.Log("RETRY ", err)
-		}))
+
+		scsiN, scsiErr = sreader.Read(scsiBytes)
 
 		if scsiErr != nil && scsiErr != io.EOF {
 			t.Fatal(scsiErr)
@@ -159,18 +148,7 @@ func readAll(t *testing.T, sreader io.Reader, rnd *rand.Rand) {
 	for scsiErr != io.EOF {
 		n := rnd.Intn(32 * KiB)
 		scsiBytes := make([]byte, n)
-		retry.Do(func() error {
-			_, scsiErr = sreader.Read(scsiBytes)
-			return scsiErr
-		}, retry.RetryIf(func(err error) bool {
-			if err != nil && errors.Is(err, iscsi.ErrPollFailed) {
-				return true
-			}
-			return false
-		}), retry.Attempts(0), retry.OnRetry(func(n uint, err error) {
-			t.Log("RETRY ", err)
-		}))
-
+		_, scsiErr = sreader.Read(scsiBytes)
 		if scsiErr != nil && scsiErr != io.EOF {
 			// something in this path causes a segfault on disconnect
 			// immediately after a poll failed, but it seems like it might
