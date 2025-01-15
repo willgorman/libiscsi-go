@@ -17,6 +17,7 @@ import (
 	"log"
 	"log/slog"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -25,8 +26,6 @@ import (
 	gopointer "github.com/mattn/go-pointer"
 	"golang.org/x/sys/unix"
 )
-
-var ErrPollFailed = errors.New("Poll failed")
 
 var defaultLogger = atomic.Pointer[slog.Logger]{}
 
@@ -54,6 +53,9 @@ type device struct {
 	targetPortal string
 	targetLun    int
 	details      ConnectionDetails
+	// TODO: (willgorman) iscsiContext has a timeout (set with iscsi_set_timeout)
+	// but it's not exported and there's no get function. need to track timeout in
+	// device
 }
 
 type ConnectionDetails struct {
@@ -193,15 +195,25 @@ type Write16 struct {
 
 func (d *device) Write16(data Write16) error {
 	logger().Debug("Write16", slog.Any("request", data))
+	state := &syncCallbackState{}
+	pdata := gopointer.Save(state)
+	defer gopointer.Unref(pdata)
 	carr := []C.uchar(string(data.Data))
 	// TODO: (willgorman) figure out why larger blocksizes cause SCSI_SENSE_ASCQ_INVALID_FIELD_IN_INFORMATION_UNIT
-	task := C.iscsi_write16_sync(d.Context, 0,
-		C.uint64_t(data.LBA), &carr[0], C.uint(len(carr)), C.int(data.BlockSize), 0, 0, 0, 0, 0)
-	defer func() {
-		if task != nil {
-			C.scsi_free_scsi_task(task)
-		}
-	}()
+	if C.iscsi_write16_task(
+		d.Context, 0, C.uint64_t(data.LBA), &carr[0], C.uint(len(carr)),
+		C.int(data.BlockSize), 0, 0, 0, 0, 0, syncCB, pdata,
+	) == nil {
+		return errors.New("unable to start iscsi_write16_task")
+	}
+
+	if err := d.eventLoop(state); err != nil {
+		return fmt.Errorf("error while waiting for task completion: %w", err)
+	}
+	task := state.scsiTask
+	if task != nil {
+		defer C.scsi_free_scsi_task(task)
+	}
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
 		// TODO: (willgorman) robust error checking of condition, sense key, etc
 		// from libiscsi
@@ -223,20 +235,28 @@ type Read16 struct {
 }
 
 func (d *device) Read16(data Read16) ([]byte, error) {
-	logger().Debug("Read16", slog.Any("request", data))
-	task := C.iscsi_read16_sync(d.Context, 0, C.uint64_t(data.LBA),
-		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize), 0, 0, 0, 0, 0)
-	defer func() {
-		if task != nil {
-			C.scsi_free_scsi_task(task)
-		}
-	}()
+	state := &syncCallbackState{}
+	pdata := gopointer.Save(state)
+	defer gopointer.Unref(pdata)
+
+	if C.iscsi_read16_task(
+		d.Context, 0, C.uint64_t(data.LBA),
+		C.uint(data.BlockSize*data.Blocks), C.int(data.BlockSize),
+		0, 0, 0, 0, 0, syncCB, pdata,
+	) == nil {
+		return nil, errors.New("unable to start iscsi_read16_task")
+	}
+	if err := d.eventLoop(state); err != nil {
+		return nil, fmt.Errorf("error while waiting for task completion: %w", err)
+	}
+
+	task := state.scsiTask
+	if task != nil {
+		defer C.scsi_free_scsi_task(task)
+	}
+
 	if task == nil || task.status != C.SCSI_STATUS_GOOD {
-		errstr := C.iscsi_get_error(d.Context)
-		if C.GoString(errstr) == "Poll failed" {
-			return nil, ErrPollFailed
-		}
-		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(errstr))
+		return nil, fmt.Errorf("iscsi_read16_sync: %s", C.GoString(C.iscsi_get_error(d.Context)))
 	}
 	logger().Debug("Read16 done", slog.Any("length", task.datain.size))
 	return C.GoBytes(unsafe.Pointer(task.datain.data), task.datain.size), nil
@@ -258,6 +278,32 @@ func (d *device) Read16Async(data Read16, tasks chan TaskResult) error {
 		return errors.New("unable to start iscsi_read16_task")
 	}
 
+	return nil
+}
+
+func (d *device) eventLoop(state *syncCallbackState) error {
+	// TODO: (willgorman) handle a timeout (from iscsi_set_timeout)
+	// this gets set by iscsiSyncCB
+	for !state.finished {
+		events := d.WhichEvents()
+		fd := unix.PollFd{
+			Fd:      int32(d.GetFD()),
+			Events:  int16(events),
+			Revents: 0,
+		}
+
+		fds := []unix.PollFd{fd}
+		_, err := unix.Poll(fds, 1000)
+		// it's fine if the syscall got interrupted by a signal, we can just
+		// resume polling
+		if err != nil && err != syscall.EINTR {
+			return fmt.Errorf("poll failed: %w", err)
+		}
+		if d.HandleEvents(fds[0].Revents) < 0 {
+			return fmt.Errorf("failed to handle events: %s",
+				C.GoString(C.iscsi_get_error(d.Context)))
+		}
+	}
 	return nil
 }
 
@@ -446,6 +492,12 @@ type callbackData struct {
 	context any
 }
 
+type syncCallbackState struct {
+	finished bool
+	status   int
+	scsiTask *C.struct_scsi_task
+}
+
 type TaskResult struct {
 	Task    Task
 	Err     error
@@ -474,6 +526,16 @@ func iscsiChannelCB(iscsiCtx iscsiContext, status int, command_data, private_dat
 		},
 		Context: data.context,
 	}
+}
+
+//export iscsiSyncCB
+func iscsiSyncCB(_ iscsiContext, status int, command_data, private_data unsafe.Pointer) {
+	task := (*C.struct_scsi_task)(command_data)
+	state := gopointer.Restore(private_data).(*syncCallbackState)
+	task.status = C.int(status)
+	state.status = status
+	state.finished = true
+	state.scsiTask = task
 }
 
 func printReadCapacity16(t *C.struct_scsi_readcapacity16) {
