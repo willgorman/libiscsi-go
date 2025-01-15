@@ -70,7 +70,7 @@ func New(details ConnectionDetails) *device {
 	}
 }
 
-func (d *device) initializeContext() {
+func (d *device) initializeContext() error {
 	if d.Context != nil {
 		_ = C.iscsi_destroy_context(d.Context)
 		d.Context = nil
@@ -84,6 +84,11 @@ func (d *device) initializeContext() {
 	targetStr := C.CString(d.details.TargetURL)
 	defer C.free(unsafe.Pointer(targetStr))
 	url := C.iscsi_parse_full_url(ctx, targetStr)
+
+	if url == nil {
+		return fmt.Errorf("error parsing target url: %v", C.GoString(C.iscsi_get_error(ctx)))
+	}
+
 	_ = C.iscsi_set_targetname(ctx, &url.target[0])
 	defer C.iscsi_destroy_url(url)
 	d.Context = ctx
@@ -92,10 +97,13 @@ func (d *device) initializeContext() {
 	d.targetPortal = C.GoString(&url.portal[0])
 	_ = C.iscsi_set_session_type(d.Context, C.ISCSI_SESSION_NORMAL)
 	_ = C.iscsi_set_header_digest(d.Context, C.ISCSI_HEADER_DIGEST_NONE_CRC32C)
+	return nil
 }
 
 func (d *device) Connect() error {
-	d.initializeContext()
+	if err := d.initializeContext(); err != nil {
+		return err
+	}
 	return retry.Do(func() error {
 		portalStr := C.CString(d.targetPortal)
 		defer C.free(unsafe.Pointer(portalStr))
