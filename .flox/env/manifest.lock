@@ -3,6 +3,9 @@
   "manifest": {
     "version": 1,
     "install": {
+      "gcc": {
+        "pkg-path": "gcc"
+      },
       "go": {
         "pkg-path": "go",
         "version": "^1.23.1"
@@ -29,6 +32,134 @@
     }
   },
   "packages": [
+    {
+      "attr_path": "gcc",
+      "broken": false,
+      "derivation": "/nix/store/j8h9xgwyjby7r4ajyzq64yvz18pf2wiv-gcc-wrapper-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116 (wrapper script)",
+      "install_id": "gcc",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "name": "gcc-wrapper-14-20241116",
+      "pname": "gcc",
+      "rev": "852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "rev_count": 744133,
+      "rev_date": "2025-01-26T09:59:49Z",
+      "scrape_date": "2025-01-27T03:28:00Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "wrapper-14-20241116",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "info": "/nix/store/blh0zr6c91ywsbygrwwyxf8gx8y2hxpz-gcc-wrapper-14-20241116-info",
+        "man": "/nix/store/ylcs9r0yl8hml67zrw9fmwffb4hryi0s-gcc-wrapper-14-20241116-man",
+        "out": "/nix/store/h83wjbb7qiq4iy8cm0j3v6i86jg8fw6l-gcc-wrapper-14-20241116"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc",
+      "broken": false,
+      "derivation": "/nix/store/3bdfrnb5s3gr3llc8bl82av2vzynhd0f-gcc-wrapper-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116 (wrapper script)",
+      "install_id": "gcc",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "name": "gcc-wrapper-14-20241116",
+      "pname": "gcc",
+      "rev": "852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "rev_count": 744133,
+      "rev_date": "2025-01-26T09:59:49Z",
+      "scrape_date": "2025-01-27T03:28:00Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "wrapper-14-20241116",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "info": "/nix/store/idzgrcpqf64fbvrmqkhkpjfmlwvj2yr2-gcc-wrapper-14-20241116-info",
+        "man": "/nix/store/dfldax7p1iv57y27awv6fvghc0lhc7a1-gcc-wrapper-14-20241116-man",
+        "out": "/nix/store/lfyq43b8x5c3nc2808lwx9zv4i6ypvdh-gcc-wrapper-14-20241116"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc",
+      "broken": false,
+      "derivation": "/nix/store/l7dpxx88q761l1gi1s6222fzlndifbdg-gcc-wrapper-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116 (wrapper script)",
+      "install_id": "gcc",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "name": "gcc-wrapper-14-20241116",
+      "pname": "gcc",
+      "rev": "852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "rev_count": 744133,
+      "rev_date": "2025-01-26T09:59:49Z",
+      "scrape_date": "2025-01-27T03:28:00Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "wrapper-14-20241116",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "info": "/nix/store/drgl9d80hpz66p82jxqmg9kdfqgjqxck-gcc-wrapper-14-20241116-info",
+        "man": "/nix/store/wav9029m9qzx0ha84mkc35zim02hwsh8-gcc-wrapper-14-20241116-man",
+        "out": "/nix/store/3jaczspfki3262h5wljq3hs7y3d1y8fv-gcc-wrapper-14-20241116"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gcc",
+      "broken": false,
+      "derivation": "/nix/store/vln6q47in3l4lxbf2k2r4qkypjbwvgm6-gcc-wrapper-14-20241116.drv",
+      "description": "GNU Compiler Collection, version 14-20241116 (wrapper script)",
+      "install_id": "gcc",
+      "license": "GPL-3.0-or-later",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "name": "gcc-wrapper-14-20241116",
+      "pname": "gcc",
+      "rev": "852ff1d9e153d8875a83602e03fdef8a63f0ecf8",
+      "rev_count": 744133,
+      "rev_date": "2025-01-26T09:59:49Z",
+      "scrape_date": "2025-01-27T03:28:00Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "wrapper-14-20241116",
+      "outputs_to_install": [
+        "out",
+        "man"
+      ],
+      "outputs": {
+        "info": "/nix/store/r6yrni3cg9fwi7fz9kh0yjpawlq46fma-gcc-wrapper-14-20241116-info",
+        "man": "/nix/store/zq9gpzd177y8k88s3lwinhcss6rhwbw5-gcc-wrapper-14-20241116-man",
+        "out": "/nix/store/591apldfgm1gr238rbfc8ib0y1z8ng2y-gcc-wrapper-14-20241116"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
     {
       "attr_path": "go",
       "broken": false,

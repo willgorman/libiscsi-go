@@ -17,6 +17,7 @@ version = 1
 [install]
 go = { pkg-path = "go", version = "^1.23.1" }
 libiscsi.pkg-path = "libiscsi"
+gcc.pkg-path = "gcc"
 
 
 ## Environment Variables ---------------------------------------------
