@@ -114,6 +114,9 @@ func TestReadRandom(t *testing.T) {
 }
 
 func TestReadLoop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long-running read loop test in short mode")
+	}
 	// seed := time.Now().UnixNano()
 	seed := int64(1732045254519287895)
 	t.Logf("using seed %d", seed)
